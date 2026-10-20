@@ -19,7 +19,7 @@ Instance fields written: ``_active_run_id``, ``_active_tool_calls``, ``_between_
 ``_tool_call_params``, ``_tool_call_tool_name``, ``_tool_call_unclassified``,
 ``_tool_dispatched``, ``_turn_done``, ``last_prompt_stats``.
 
-Instance fields read: ``_agent_accepts_image``, ``_buffer``, ``_last_activity``, ``_liveness_oracle``,
+Instance fields read: ``_agent_accepts_image``, ``_buffer``, ``_copilot_ambiguous_mcp_calls``, ``_copilot_unmatched_titles``, ``_last_activity``, ``_liveness_oracle``,
 ``_permission_gate_events``, ``_pid``, ``_process``, ``_sel_settled_tool_calls``,
 ``_session_id``, ``_steer_turn``, ``_turn_lock``.
 """
@@ -55,6 +55,7 @@ from kiro_crew.acp.elicitation import is_elicitation_request
 from kiro_crew.acp.liveness import EVIDENCE_SAMPLING, VERDICT_WORKING, consult_offloaded
 from kiro_crew.acp.prompt_blocks import build_prompt_blocks
 from kiro_crew.acp.transport_errors import (
+    AcpError,
     AcpProcessDied,
     AcpTimeoutError,
     _raise_acp_error,
@@ -92,6 +93,11 @@ from kiro_crew.acp.types import (
     TERMINAL_TOOL_STATUSES,
     AcpEvent,
     JsonRpcMessage,
+)
+from kiro_crew.agent_sdk.backends import (
+    ACP_BACKEND_FORBIDDEN_MODES,
+    ACP_BACKEND_PROMPT_COMMAND_ALLOWLIST,
+    prompt_command_issue,
 )
 from kiro_crew.executors import subprocess_executor
 from kiro_crew.security import redact_credentials, redact_exfiltration_urls
@@ -696,7 +702,7 @@ async def send_message_stream(
                 # The gate tripwire holds on every reader that answers
                 # permission frames, this text-only one included.
                 await self._tripwire_pi_gate(msg)
-                await self._tripwire_goose_mode(msg)
+                await self._tripwire_permission_state(msg)
                 chunk, is_thinking = self._extract_text_chunk(msg)
                 if chunk and not is_thinking:
                     # A claude compaction notice is a control frame wearing
@@ -831,6 +837,8 @@ async def _dispatch_events(
     self._tool_call_identity_unreadable.clear()
     self._tool_call_params.clear()
     self._tool_call_diff_path.clear()
+    getattr(self, "_copilot_ambiguous_mcp_calls", set()).clear()
+    getattr(self, "_copilot_unmatched_titles", {}).clear()
     # Reset the per-turn observed-tool-call bookkeeping (see __init__).
     self._observed_tool_calls.clear()
     getattr(self, "_sel_settled_tool_calls", set()).clear()
@@ -1093,7 +1101,7 @@ async def _dispatch_events(
             # message end.  See `_extract_tool_call_update` for the dual-path
             # (content blocks vs rawOutput) details.
             await self._tripwire_pi_gate(msg)
-            await self._tripwire_goose_mode(msg)
+            await self._tripwire_permission_state(msg)
             tool_result_event = self._extract_tool_call_update(msg)
             if tool_result_event:
                 if tool_result_event.tool_status in TERMINAL_TOOL_STATUSES:
@@ -1322,18 +1330,44 @@ async def _send_prompt(self: AcpClient, message: str, *, allow_image: bool = Tru
     await self._settle_orphan_steers()
     # Shared with AcpSessionHandle.prompt via prompt_blocks so the two paths
     # cannot drift.
+    blocks = await asyncio.to_thread(
+        build_prompt_blocks,
+        message,
+        allow_image=allow_image,
+        agent_accepts_image=self._agent_accepts_image,
+    )
+    # A harness whose prompt parser runs ``/<name>`` as its own command can be told,
+    # by prompt text alone, to stop asking before tools run. Refused before the wire,
+    # because the harness reports the move too late to act on (see
+    # ``ACP_BACKEND_PROMPT_COMMAND_ALLOWLIST``). A membership test, so a harness
+    # outside the table -- kiro-cli included -- gains no call here (harness-parity H13).
+    if self.backend in ACP_BACKEND_FORBIDDEN_MODES:
+        # A state move the in-turn readers never saw (a frame buffered by a config
+        # write, or that write's own answer) is caught before a tool can run.
+        try:
+            await self._refuse_session_config_drift()
+        except BaseException:
+            # Nothing was sent: release a caller waiting on this turn's end, as the
+            # allowlist refusal below does.
+            self._turn_done.set()
+            raise
+    if self.backend in ACP_BACKEND_PROMPT_COMMAND_ALLOWLIST:
+        issue = prompt_command_issue(
+            self.backend,
+            [block.get("text", "") for block in blocks if block.get("type") == "text"],
+        )
+        if issue:
+            # Nothing was sent, so no turn is in flight: release a caller that
+            # waits on the turn ending before it raises.
+            self._turn_done.set()
+            raise AcpError(issue, transient=False, user_worded=True)
     return await self._send_request(
         METHOD_PROMPT,
         {
             "sessionId": self._session_id,
             # Offloaded: see the note in session_handle_turn.prompt -- image
             # reads and base64 encoding must not block the event loop.
-            "prompt": await asyncio.to_thread(
-                build_prompt_blocks,
-                message,
-                allow_image=allow_image,
-                agent_accepts_image=self._agent_accepts_image,
-            ),
+            "prompt": blocks,
         },
     )
 
@@ -1424,7 +1458,7 @@ async def _read_prompt_response(self: AcpClient, req_id: int, timeout: float) ->
                 await self._skill_reads.note(tool_event)
                 await self._maybe_fire_pre_tool_hooks(tool_event)
             await self._tripwire_pi_gate(msg)
-            await self._tripwire_goose_mode(msg)
+            await self._tripwire_permission_state(msg)
             tool_result_event = self._extract_tool_call_update(msg)
             if tool_result_event:
                 self._skill_reads.credit(tool_result_event)
