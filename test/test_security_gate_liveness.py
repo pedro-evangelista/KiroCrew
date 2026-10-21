@@ -526,7 +526,13 @@ def _url_payload_command(n: int) -> str:
 #: ``paths``: one import and one ``or`` clause on the write gate, plus the blank line
 #: isort puts after the import. The matcher lives outside the package
 #: (``kiro_crew.edition_install_fence``).
-_PACKAGE_LINE_BUDGET = 32_616
+#:
+#: Raised again, from 32,616, for the ``-c`` operand that skips a redirect word, and the
+#: rm floor reading each nested-shell payload through the shared extractor and the
+#: shared data-consumer exemption, with a heredoc body left as data, and the exemption
+#: voided when the raw text holds a splice marker, and a redirect glued to ``-c`` /
+#: ``-S`` read the same way. No pattern moved.
+_PACKAGE_LINE_BUDGET = 32_804
 
 #: Ceiling on any ONE file in the package. This is what the bound is really for --
 #: a package total says nothing about a single file growing back into a second
