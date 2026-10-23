@@ -701,6 +701,7 @@ _DASHBOARD_HOOKS = {
         "_own_host_warm",
         "_instances_startup",
         "_browser_sessions_startup",
+        "_cookie_watcher_startup",
     ),
     "on_cleanup": (
         "_tunnel_shutdown",
@@ -721,6 +722,7 @@ _DASHBOARD_HOOKS = {
         "_crew_log_drain",
         "_browser_install_shutdown",
         "_browser_view_shutdown",
+        "_cookie_watcher_shutdown",
         "_connections_warm_shutdown",
         "_workflow_shutdown",
         "_unlink_unix_socket",
@@ -729,7 +731,7 @@ _DASHBOARD_HOOKS = {
     "on_response_prepare": ("_finalize_asset_cache_control",),
 }
 _API_HOOKS = {
-    "on_startup": ("_stt_startup", "_own_host_warm"),
+    "on_startup": ("_stt_startup", "_own_host_warm", "_cookie_watcher_startup"),
     "on_cleanup": (
         "_kiro_prerequisite_shutdown",
         "_kas_login_shutdown",
@@ -740,6 +742,7 @@ _API_HOOKS = {
         "_prevent_sleep_shutdown",
         "_listener_guard_shutdown",
         "_browser_install_shutdown",
+        "_cookie_watcher_shutdown",
         "_connections_warm_shutdown",
         "_workflow_shutdown",
         "_unlink_unix_socket",
@@ -791,7 +794,8 @@ _DASHBOARD_BOOT = tuple("""
     _insert_enterprise_gate _register_prevent_sleep_shutdown _register_listener_guard_shutdown
     _register_stt_hooks _register_own_host_warm _register_config_watch
     _register_instances_hooks _register_browser_install_cleanup
-    _register_browser_view_cleanup _register_connections_warm_lifecycle
+    _register_browser_view_cleanup _register_browser_cookie_watcher
+    _register_connections_warm_lifecycle
     _register_workflow_lifecycle _register_crewmate_prune_gate _register_change_card_hook
     _register_unix_socket_cleanup build_hardened_runner on_gateway_startup
     init_hook_reconciler async_safe_context_call current_context register_pre_exec_stop
@@ -851,6 +855,7 @@ _API_BOOT = tuple("""
     _register_deploy_routes _register_stt_hooks _register_own_host_warm
     _register_config_watch _register_prevent_sleep_shutdown
     _register_listener_guard_shutdown _register_browser_install_cleanup
+    _register_browser_cookie_watcher
     _register_connections_warm_lifecycle _register_workflow_lifecycle
     _register_unix_socket_cleanup build_hardened_runner bind_address_for _start_site
     _arm_listener_guard _kick_pinned_order_load _export_bound_port _resolved_bound_port
@@ -1062,8 +1067,8 @@ def _routes(app: web.Application) -> list[tuple[str, str, str]]:
 #: SHA-256 of the MCP route table's ``"<method> <path> <handler>"`` rows in
 #: registration order, and their count. The table is shared by both entrypoints, so a
 #: route added to it on purpose updates these with it.
-_MCP_TABLE_ROWS = 312
-_MCP_TABLE_DIGEST = "f0f47a39f898c08d39490dd0ad300dac3fe717153772371d458295134180c185"
+_MCP_TABLE_ROWS = 316
+_MCP_TABLE_DIGEST = "12b8596ce66bd9e06e8bd1069908d37039af7459dbfe8ffc4bb5ca6d60dd5430"
 
 
 def test_the_mcp_route_table_keeps_its_rows_and_order() -> None:

@@ -387,13 +387,19 @@ class TestLeafOnlyPopulationIsRecorded:
     #:   data-home root beside ``crew-teams`` rather than under the sandbox
     #:   read-write ``trust/``, so leaf-only for the same reason.
     #:
-    #: One more root-level directory, three entries per tier:
+    #: Two more root-level directories, three entries per tier each:
     #:
     #: * ``web-push`` -- the Web Push VAPID key and device subscription secrets
     #:   (``notifications/push_store.py``), masked as a whole directory so the
     #:   ``atomic_write`` temps they publish through are hidden too. At the data-home
     #:   root beside writable siblings, so leaf-only is the only hold.
-    EXPECTED: dict[str, int] = {"standard": 296, "cc": 303, "strict": 304}
+    #:
+    #: * ``browser-cookie-import`` -- the imported browser cookies
+    #:   (``browser_cli/cookies.py``), masked and pre-created. A directory so that
+    #:   the gateway's ``atomic_write`` of the state renames INSIDE the masked name,
+    #:   never over it; at the data-home root beside writable siblings, so
+    #:   leaf-only is the only hold available for the directory itself.
+    EXPECTED: dict[str, int] = {"standard": 299, "cc": 306, "strict": 307}
 
     @pytest.mark.parametrize("tier", TIERS)
     def test_leaf_only_count_has_not_grown(self, tier: str) -> None:
