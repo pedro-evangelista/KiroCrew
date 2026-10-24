@@ -526,7 +526,11 @@ def _url_payload_command(n: int) -> str:
 #: ``paths``: one import and one ``or`` clause on the write gate, plus the blank line
 #: isort puts after the import. The matcher lives outside the package
 #: (``kiro_crew.edition_install_fence``).
-_PACKAGE_LINE_BUDGET = 32_616
+#:
+#: Raised by 3, from 32,616, for one ``_CREW_SECRET_LEAVES`` entry in ``paths_lists``:
+#: the mediated-secret request directory (``secret-request-policy``), denied to the
+#: agent file tools as a whole. Data, not rule logic: the matcher is unchanged.
+_PACKAGE_LINE_BUDGET = 32_619
 
 #: Ceiling on any ONE file in the package. This is what the bound is really for --
 #: a package total says nothing about a single file growing back into a second
