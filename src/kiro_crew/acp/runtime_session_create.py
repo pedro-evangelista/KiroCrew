@@ -51,6 +51,7 @@ from kiro_crew.acp.session_handle import (
 from kiro_crew.acp.session_mcp import session_mcp_server_is_disabled
 from kiro_crew.acp.types import METHOD_SESSION_NEW, JsonRpcMessage
 from kiro_crew.agent_files import kas_wire_agent_id
+from kiro_crew.agent_sdk.kas_model_catalog import request_vault_identity
 from kiro_crew.config import live
 from kiro_crew.dashboard.side_readonly_spec import unavailable_mode_explanation
 from kiro_crew.providers.mirrors.registry import has_mirror
@@ -368,6 +369,12 @@ async def create_session(
     # cancellation landing in the wait closes the scope on the way out.
     self._session_inits_in_flight += 1
     try:
+        # The vault identity the request goes out under, for the KAS catalog
+        # recorder: the response's ``model`` select is that account's. Read
+        # inside the init scope (the runtime already reads as busy) and before
+        # any start permit is held, so a cancel during the read closes the
+        # scope below and leaks no permit, and the read is not start latency.
+        request_identity = await request_vault_identity(self.acp_backend)
         # Gate BEFORE the request goes out, released exactly once: on success
         # right after the answer (the rest of session setup is not what the
         # gate protects), on a timeout by the collector that now owns the
@@ -442,6 +449,7 @@ async def create_session(
             session_key=session_key,
             member_dispatch_mounted=member_mounted,
             request_sent_at=request_sent_at,
+            request_identity=request_identity,
         )
         if collector is None:
             permit.release()
@@ -476,6 +484,7 @@ async def create_session(
         session_key=session_key,
         member_dispatch_mounted=member_mounted,
         request_sent_at=request_sent_at,
+        request_identity=request_identity,
     )
 
 
@@ -504,6 +513,7 @@ def _collect_late_start(
     session_key: str = "",
     member_dispatch_mounted: bool = False,
     request_sent_at: float | None = None,
+    request_identity: str = "",
 ) -> StartCollector | None:
     """Hand a timed-out ``session/new`` to a :class:`StartCollector`.
 
@@ -590,6 +600,7 @@ def _collect_late_start(
                 session_key=session_key,
                 member_dispatch_mounted=member_dispatch_mounted,
                 request_sent_at=request_sent_at,
+                request_identity=request_identity,
             )
             # A declining (or raising) adopter answers False and the
             # collector performs the one teardown.
@@ -653,6 +664,7 @@ async def _finish_create_session(
     session_key: str = "",
     member_dispatch_mounted: bool = False,
     request_sent_at: float | None = None,
+    request_identity: str = "",
 ) -> AcpSessionHandle:
     """Everything after a successful ``session/new``: queue, handle, mode, drain.
 
@@ -702,6 +714,9 @@ async def _finish_create_session(
     if self._mirrored_spec_check_needed(mirrored_snapshot):
         await self._require_unchanged_mirrored_spec(session_id, mirrored_snapshot)
 
+    # The vault identity the request went out under, read by the KAS catalog
+    # recorder inside ``store_session_config``; see the handle's field.
+    handle.request_vault_identity = request_identity
     # Populate state from session/new response (configOptions, available models)
     handle.store_session_config(resp)
     # Both halves of that snapshot are now known, which is what makes the

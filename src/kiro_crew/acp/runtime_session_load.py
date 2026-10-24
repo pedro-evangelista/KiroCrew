@@ -46,6 +46,7 @@ from kiro_crew.acp.session_mcp import (
 )
 from kiro_crew.acp.types import ACP_BACKEND_KAS, METHOD_SESSION_LOAD, JsonRpcMessage
 from kiro_crew.agent_files import kas_wire_agent_id
+from kiro_crew.agent_sdk.kas_model_catalog import request_vault_identity
 from kiro_crew.dashboard.side_readonly_spec import unavailable_mode_explanation
 from kiro_crew.providers.mirrors.registry import has_mirror
 
@@ -318,6 +319,10 @@ async def load_session(
         # docs/system-specs/modules/acp-client.md "loading a session
         # triggers MCP re-initialization") — so it gets the same budget.
         request_sent_at = time.time()
+        # Mirrors create_session: the vault identity the request goes out under,
+        # for the KAS catalog recorder (a load echoes the select too). Inside this
+        # ``try``, so a cancel during the read still closes the init scope.
+        request_identity = await request_vault_identity(self.acp_backend)
         resp = await self._send_and_await(METHOD_SESSION_LOAD, load_params, timeout=budget)
 
         # A genuine resume echoes "modes" in the response (same signal AcpClient
@@ -376,6 +381,7 @@ async def load_session(
     self._harness.record_session_projection(handle, kas_agents, active_agent)
     if self._mirrored_spec_check_needed(mirrored_snapshot):
         await self._require_unchanged_mirrored_spec(resume_sid, mirrored_snapshot)
+    handle.request_vault_identity = request_identity
     handle.store_session_config(resp)
     # session/load echoes ``currentModelId`` exactly like session/new, and a
     # session persisted before the account's served list changed can come

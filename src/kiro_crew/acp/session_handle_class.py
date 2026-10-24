@@ -648,6 +648,13 @@ class AcpSessionHandle:
         # State tracking (populated from session/new response via store_session_config)
         self._model: str = ""
         self.active_agent: str = ""
+        # The vault identity fingerprint read as THIS session's ``session/new``
+        # or ``session/load`` went out (``kas_model_catalog.request_vault_identity``);
+        # ``""`` on a handle whose request was never stamped, which records
+        # nothing. The KAS catalog recorder keeps it with the response's
+        # ``model`` select: the engine answers for the account in the vault when
+        # it was asked, and the picker serves the rows only to that account.
+        self.request_vault_identity: str = ""
         # Model id kiro-cli RESOLVED the session to (from currentModelId in the
         # session/new|load response), kept separate from _model (the user-picked
         # alias) so it feeds ONLY the context-window backfill — never slot.model

@@ -438,7 +438,16 @@ engine instead ([aws-control.md](aws-control.md)).
 - A Crew sign-out deletes the vault entry under the identity's refresh lock and
   retires running identity-store processes (`dashboard/handlers/kas_login.py`), so
   neither a refresh in flight nor a process holding the old access token in memory
-  outlives the logout.
+  outlives the logout. The bundle-route model picker needs nothing from the
+  sign-in service: its recording carries the vault identity fingerprint the
+  producing session's request went out under, and it is served only while the
+  vault still names that account, so a sign-in or sign-out from the dashboard
+  or from `kirocrew kas login` / `kas logout` (`cli_kas_login.py`) turns it cold
+  ([model-selection.md](../common/model-selection.md)). The dashboard drops its
+  own copy as well: the sign-out button (`pages/developer/KiroSignInCard.tsx`)
+  and the authorized sign-in (`components/KasLoginGate.tsx`) drop the browser's
+  model-list caches (`clearCachedModels`, a reset of `['available-models']`),
+  because that query is otherwise refetched only when a session spawns.
 - The dashboard surfaces that NAME the signed-in account read the vault, never
   `kiro-cli whoami`, whenever the vault is the harness's credential (the KAS bundle
   route whatever the vault holds, or the relay route with a usable Crew sign-in --
