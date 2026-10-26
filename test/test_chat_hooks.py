@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import re
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import UUID
 
 import pytest
 
@@ -140,3 +143,76 @@ class TestCanonicalNameExemption:
         assert len(calls) >= 6, f"expected the known permission paths, found {len(calls)}"
         missing = [c for c in calls if "canonical_name=event.tool_name" not in c]
         assert not missing, missing
+
+
+@pytest.mark.asyncio
+async def test_main_chat_tool_hook_includes_native_tool_and_own_session_ids(tmp_path, monkeypatch):
+    from chat_test_helpers import _make_state
+    from dashboard_chat_helpers import _provider_mock
+
+    from kiro_crew.agent_sdk.backends import ACP_BACKEND_KIRO
+    from kiro_crew.agent_sdk.capabilities import capabilities_for
+    from kiro_crew.dashboard.chat import _run_chat
+    from kiro_crew.hooks import HOOK_EVENT_PRE_TOOL_USE, ScriptHookStore
+    from kiro_crew.providers.base import EVENT_COMPLETE, EVENT_TOOL_CALL, LLMEvent
+
+    fixed_turn_id = "fedcba9876543210fedcba9876543210"
+    monkeypatch.setattr(
+        chat_runner,
+        "uuid",
+        SimpleNamespace(uuid4=lambda: UUID(hex=fixed_turn_id)),
+    )
+    monkeypatch.setattr("kiro_crew.dashboard.chat.config_dir", lambda: tmp_path)
+    monkeypatch.setattr("kiro_crew.dashboard.chat.sel", lambda: MagicMock())
+
+    state = _make_state(tmp_path)
+    state.broadcast_ws = MagicMock()
+    state._hook_store = ScriptHookStore(tmp_path / "hooks")
+    state._hook_store.create(
+        {
+            "name": "identity-hook",
+            "event": HOOK_EVENT_PRE_TOOL_USE,
+            "command": "echo test",
+        }
+    )
+    client = _provider_mock()
+    client.capabilities = capabilities_for(ACP_BACKEND_KIRO)
+    client.cwd = ""
+    client.settings_withheld_cause = MagicMock(return_value=None)
+
+    async def stream(_message):
+        yield LLMEvent(
+            kind=EVENT_TOOL_CALL,
+            title="ReadFile",
+            tool_kind="read",
+            tool_input='{"path":"README.md"}',
+            tool_call_id="native-tool-call-7",
+        )
+        yield LLMEvent(kind=EVENT_COMPLETE)
+
+    client.stream = stream
+    client.stream_command = stream
+    state.sessions.get_or_create = AsyncMock(return_value=(client, True, False))
+    state.sessions.get_pid = MagicMock(return_value=None)
+    state.sessions.check_context_usage = MagicMock()
+    state.sessions.record_success = MagicMock()
+    state.sessions.record_failure = AsyncMock()
+    state.sessions.release = MagicMock()
+    slot = state.get_or_create_slot("s1")
+
+    hook_result = SimpleNamespace(
+        hook_name="identity-hook",
+        exit_code=0,
+        stdout="",
+        stderr="",
+        duration_ms=1,
+    )
+    with patch("kiro_crew.hooks.run_script_hook", new_callable=AsyncMock) as mock_run:
+        mock_run.return_value = hook_result
+        await _run_chat(state, slot, "read the README")
+
+    assert mock_run.await_count == 1
+    hook_event = mock_run.await_args.args[2]
+    assert hook_event["tool_call_id"] == "native-tool-call-7"
+    assert hook_event["session_key"] == "dashboard:s1"
+    assert hook_event["turn_id"] == fixed_turn_id
