@@ -654,6 +654,17 @@ PEEK_CALLERS: "dict[str, str]" = {
         "half runs inside KiroCrewConfig.load(), and current_context() with nothing "
         "installed loads config, which would re-enter that load."
     ),
+    "edition_locks.py::policy_permits": (
+        "no-context answer is to fall through to current_context() and the full "
+        "fail-closed evaluation, exactly as if the peek were absent. The peek only "
+        "short-circuits an oss build whose INSTALLED policy does not name the scope, "
+        "where the answer is the same permit that evaluation would give."
+    ),
+    "edition_locks.py::policy_governs": (
+        "no-context answer is to fall through to current_context(), and its error "
+        "answers 'governed', which refuses the item; the peek only skips that "
+        "resolution on a host that already installed a context."
+    ),
     "platform/governance_parts/carriers.py::active_policy_distribution": (
         "no-context answer is an unconfigured PolicyDistribution, i.e. no "
         "central fetch. It is reached only when boot never installed a context, "

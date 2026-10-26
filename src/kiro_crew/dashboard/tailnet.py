@@ -25,6 +25,7 @@ as tailnet-specific (its own example is ``userfoo.tailscale.net``, not
 from __future__ import annotations
 
 import asyncio
+import functools
 import ipaddress
 import json
 import logging
@@ -323,14 +324,18 @@ def _valid_magicdns_name(raw: object, magic_dns_suffix: object) -> str | None:
     return name
 
 
-def self_dns_name() -> str | None:
+def self_dns_name(*, audit_tool: str = "") -> str | None:
     """This machine's MagicDNS name on its tailnet, or ``None``.
 
     ``None`` covers every "not applicable" case as well as every failure:
     Tailscale absent, daemon not running, machine not logged in (``CurrentTailnet``
     is nil), MagicDNS disabled for the tailnet, or a name that does not validate
-    against the tailnet's own suffix.
+    against the tailnet's own suffix, or a tailnet governance refuses. Pass
+    *audit_tool* from a call that acts on the name, so that decision is audited.
+    Whether the last call's ``None`` was that governance refusal is
+    :func:`last_name_refused_by_policy`, so a caller can name the right remedy.
     """
+    _LAST_PROBE["refused_by_policy"] = False
     status = _run_json(["status", "--json"])
     if not isinstance(status, dict):
         return None
@@ -349,7 +354,54 @@ def self_dns_name() -> str | None:
     name = _valid_magicdns_name(self_node.get("DNSName"), suffix)
     if name is None:
         logger.debug("tailscale status returned no usable Self.DNSName for this tailnet")
+        return None
+    # ``_valid_magicdns_name`` accepted it, so *suffix* is a string; normalised the
+    # same way it is there.
+    suffix_name = str(suffix).strip().strip(".").lower()
+    if not tailnet_permitted(suffix_name, audit_tool=audit_tool):
+        logger.warning(
+            "tailnet %s is not permitted by governance (capabilities.tailnet_origin "
+            "tailnets); no tailnet origin is derived",
+            suffix_name,
+        )
+        _LAST_PROBE["refused_by_policy"] = True
+        return None
     return name
+
+
+#: Whether the most recent :func:`self_dns_name` refused a tailnet on governance.
+#: A message hint only (concurrent probes may overwrite it); never a control.
+_LAST_PROBE: "dict[str, bool]" = {"refused_by_policy": False}
+
+
+def name_and_policy_refusal(*, audit_tool: str = "") -> "tuple[str | None, bool]":
+    """:func:`self_dns_name`, and whether a ``None`` was the policy refusing the tailnet.
+
+    Pass *audit_tool* from a call that acts on the answer, so the decision is audited.
+    """
+    _LAST_PROBE["refused_by_policy"] = False
+    name = self_dns_name(audit_tool=audit_tool) if audit_tool else self_dns_name()
+    return name, not name and _LAST_PROBE["refused_by_policy"]
+
+
+def last_name_refused_by_policy() -> bool:
+    """True when the last :func:`self_dns_name` returned ``None`` on a policy refusal."""
+    return _LAST_PROBE["refused_by_policy"]
+
+
+def tailnet_permitted(tailnet: str, *, audit_tool: str = "") -> bool:
+    """Whether the policy's ``tailnets`` list permits *tailnet* (a MagicDNS suffix).
+
+    Asked as ``tailnets:<suffix>`` on ``capabilities.tailnet_origin``. Fail-closed.
+    A policy with no ``tailnets`` list permits every tailnet in an ``oss`` build, as
+    before the list existed. In an enterprise build an unnamed list is empty (RFC D3;
+    ``tiers._with_enterprise_baseline``), so none is permitted.
+    """
+    from kiro_crew.edition_locks import policy_permits
+
+    return policy_permits(
+        "capabilities.tailnet_origin", f"tailnets:{tailnet}", audit_tool=audit_tool
+    )
 
 
 def tailnet_origin() -> str | None:
@@ -429,6 +481,9 @@ class DaemonProbe:
     #: report any unmet requirement. ``False`` is reserved for an explicit
     #: ``CertDomains`` list that does not contain this host.
     https_enabled: bool | None = None
+    #: Signed in with a valid name, but the policy's ``tailnets`` list refuses this
+    #: tailnet. An administrator's decision, like a pinned capability.
+    governance_refused: bool = False
 
 
 def _count_peers(status: dict) -> tuple[int, int]:
@@ -508,7 +563,23 @@ def probe_daemon() -> DaemonProbe:
         )
     peer_count, peers_online = _count_peers(status)
     login = _self_login(status)
+    _LAST_PROBE["refused_by_policy"] = False
     name = self_dns_name() or ""
+    if not name and last_name_refused_by_policy():
+        return DaemonProbe(
+            name="",
+            installed=True,
+            reachable=True,
+            logged_in=True,
+            detail=(
+                "Signed in, but your administrator's security policy does not "
+                "permit this tailnet (capabilities.tailnet_origin tailnets)."
+            ),
+            login=login,
+            peer_count=peer_count,
+            peers_online=peers_online,
+            governance_refused=True,
+        )
     if not name:
         return DaemonProbe(
             name="",
@@ -680,7 +751,14 @@ async def resolve_tailnet_host(enabled: bool) -> str:
             "dashboard through an explicitly configured dashboard.url."
         )
         return ""
-    name: str | None = await asyncio.to_thread(self_dns_name)
+    _LAST_PROBE["refused_by_policy"] = False
+    name: str | None = await asyncio.to_thread(
+        functools.partial(self_dns_name, audit_tool="tailnet_origin_resolve")
+    )
+    if not name and last_name_refused_by_policy():
+        # self_dns_name already logged which tailnet the policy refused; no retry
+        # or `tailscale status` check changes an administrator's decision.
+        return ""
     if not name:
         # Debug-level silence is right for a host that never opted in, but the
         # operator who set ``dashboard.tailscale.enabled`` gets the same bare 403
@@ -793,7 +871,9 @@ async def _recover_tailnet_origin(app: web.Application, state: TailnetOriginStat
             delay = min(delay * 2, _ORIGIN_RECOVERY_MAX_SECS)
             continue
 
-        host = await asyncio.to_thread(self_dns_name)
+        host = await asyncio.to_thread(
+            functools.partial(self_dns_name, audit_tool="tailnet_origin_recover")
+        )
         if not host:
             delay = min(delay * 2, _ORIGIN_RECOVERY_MAX_SECS)
             continue

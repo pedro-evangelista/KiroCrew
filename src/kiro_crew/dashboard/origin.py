@@ -284,7 +284,15 @@ def check_origin(
             req_host = request.headers.get("Host", "")
             origin_hostport = origin_base.split("://", 1)[-1]
             if req_host and origin_hostport == req_host:
-                return True
+                # Another spelling of an allowlisted origin (``[0:0::1]`` for
+                # ``[::1]``) is that origin. Anything else is an extra origin, and the
+                # ``dashboard_origins`` policy decides it, audited (oss, no policy: allowed).
+                from kiro_crew.dashboard.urls import origin_permitted
+                from kiro_crew.platform.governance_parts.matching import _origin_form
+
+                if _origin_form(origin_base) in {_origin_form(a) for a in allowed}:
+                    return True
+                return origin_permitted(origin_base, audit_tool="dashboard_origin_request")
     # NOTE (CSE SEC-016): we deliberately do NOT blanket-trust every loopback
     # origin regardless of port. A browser always sends an Origin header, so a
     # malicious local web page on an arbitrary port would otherwise pass this

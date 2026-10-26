@@ -210,7 +210,7 @@ class TestResolveChokepoint:
         """No name, and the daemon is not even consulted."""
         probed: list[str] = []
 
-        def _probe() -> str:
+        def _probe(**_kw) -> str:
             probed.append("probed")
             return _HOST
 
@@ -227,7 +227,7 @@ class TestResolveChokepoint:
 
     @pytest.mark.asyncio
     async def test_unpinned_host_still_derives(self, isolated_home, monkeypatch) -> None:
-        monkeypatch.setattr(tailnet, "self_dns_name", lambda: _HOST)
+        monkeypatch.setattr(tailnet, "self_dns_name", lambda **_kw: _HOST)
         _install_policy(monkeypatch, None)
         assert await tailnet.resolve_tailnet_host(True) == _HOST
 

@@ -530,8 +530,18 @@ class TestCheckOriginLoopbackTrust:
 class TestAllowedLoopbackPortsEnv:
     """KIROCREW_ALLOWED_LOOPBACK_PORTS opts specific loopback ports into the allowed set."""
 
-    @patch.dict("os.environ", {"KIROCREW_ALLOWED_LOOPBACK_PORTS": "8777,9000"})
-    def test_env_ports_added(self) -> None:
+    @patch.dict("os.environ", {"KIROCREW_ALLOWED_LOOPBACK_PORTS": "8777,9000"}, clear=True)
+    def test_env_ports_added(self, monkeypatch) -> None:
+        # The gateway always has a context installed by the time it builds the set.
+        # ``clear=True`` drops the test home pin, so without these the
+        # ``dashboard_origins`` probe and its SEL record would reach the real home.
+        from types import SimpleNamespace
+
+        import kiro_crew.sel as sel_mod
+        from kiro_crew.platform import context as pc
+
+        monkeypatch.setattr(pc, "installed_context", lambda: SimpleNamespace(governance=None))
+        monkeypatch.setattr(sel_mod, "sel", lambda: SimpleNamespace(log_governance_decision=dict))
         origins = build_allowed_origins(7777, local_only=True)
         assert "http://localhost:8777" in origins
         assert "http://127.0.0.1:8777" in origins

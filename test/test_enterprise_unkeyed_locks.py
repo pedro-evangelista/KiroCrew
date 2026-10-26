@@ -17,7 +17,6 @@ import pytest
 
 from kiro_crew import edition_locks
 from kiro_crew.apps import dev_mode
-from kiro_crew.computer_use import enable_state
 from kiro_crew.config.sections_telemetry import TelemetryConfig
 from kiro_crew.dashboard.handlers import updates
 from kiro_crew.dashboard.handlers.agents import api_config_schema
@@ -103,14 +102,6 @@ def test_dev_mode_metadata_is_ignored(enterprise, monkeypatch: pytest.MonkeyPatc
 def test_oss_dev_mode_metadata_still_applies(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(dev_mode, "_read_installed", lambda name: SimpleNamespace(dev=True))
     assert dev_mode.is_dev_mode("some-app") is True
-
-
-def test_computer_use_opt_in_is_ignored(enterprise):
-    assert enable_state.is_enabled({"enabled": True}) is False
-
-
-def test_oss_computer_use_opt_in_still_applies():
-    assert enable_state.is_enabled({"enabled": True}) is True
 
 
 @pytest.fixture

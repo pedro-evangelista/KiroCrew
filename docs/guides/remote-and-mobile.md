@@ -246,6 +246,11 @@ the token-auth middleware unconditionally, so a wider bind never exposes an
 unauthenticated surface beyond the three token-free liveness probes
 (`/api/health`, `/api/live`, `/api/ready`).
 
+A governance policy can narrow both: the `bind_address` list refuses a
+`KIROCREW_BIND` address it does not name (the gateway then binds `127.0.0.1`),
+and the `dashboard_origins` list drops an extra origin it does not name. An
+enterprise build allows neither until a policy names it.
+
 Everything below therefore works by putting something in front of loopback.
 
 ### SSH tunnel (laptop)

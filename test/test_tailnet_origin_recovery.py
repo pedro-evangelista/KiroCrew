@@ -25,7 +25,7 @@ class TestRecovery:
         probes = 0
         governance_tools: list[str] = []
 
-        def _name() -> str | None:
+        def _name(**_kw) -> str | None:
             nonlocal probes
             probes += 1
             assert f"https://{_HOST}" not in baseline
@@ -67,7 +67,7 @@ class TestRecovery:
         state = recovery.TailnetOriginState(load_enabled=lambda: next(enabled_states))
 
         monkeypatch.setattr(recovery, "_ORIGIN_RECOVERY_INITIAL_SECS", 0)
-        monkeypatch.setattr(recovery, "self_dns_name", lambda: _HOST)
+        monkeypatch.setattr(recovery, "self_dns_name", lambda **_kw: _HOST)
         monkeypatch.setattr(
             recovery,
             "is_governance_pinned_off",
@@ -93,7 +93,7 @@ class TestRecovery:
         monkeypatch.setattr(
             recovery,
             "self_dns_name",
-            lambda: probed.append(True) or _HOST,
+            lambda **_kw: probed.append(True) or _HOST,
         )
         monkeypatch.setattr(
             recovery,
@@ -143,7 +143,7 @@ class TestRecovery:
         state = recovery.TailnetOriginState(load_enabled=lambda: True)
 
         monkeypatch.setattr(recovery, "_ORIGIN_RECOVERY_INITIAL_SECS", 0)
-        monkeypatch.setattr(recovery, "self_dns_name", lambda: _HOST)
+        monkeypatch.setattr(recovery, "self_dns_name", lambda **_kw: _HOST)
         monkeypatch.setattr(
             recovery,
             "is_governance_pinned_off",

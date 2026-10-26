@@ -337,7 +337,34 @@ SCOPE_CATALOG: Dict[str, ScopeSpec] = {
     # question it answers.
     # Data row only — CONTRACT_VERSION and the evaluator are untouched (mirrors
     # telemetry).
-    "capabilities.tailnet_origin": ScopeSpec(CAPABILITY, capability_default=True),
+    #
+    # Inner ``tailnets`` ruleset (``host`` matcher): which tailnets, by MagicDNS
+    # suffix, the derived origin may come from (RFC crew-enterprise-edition,
+    # appendix row "Allowed tailnets"). Queried as ``tailnets:<suffix>`` in
+    # ``tailnet.self_dns_name``, so startup, background recovery and the CLI all
+    # see it. In an enterprise build a central policy that turns the row on
+    # without naming the list leaves it empty (``baseline.BASELINE_INNER_LISTS``).
+    "capabilities.tailnet_origin": ScopeSpec(
+        CAPABILITY, capability_default=True, scope_matchers={"tailnets": "host"}
+    ),
+    # The gateway's TCP bind address (RFC appendix row "Bind address and tunnel").
+    # Queried with the canonical IP text by ``dashboard.urls.bind_address_for``
+    # whenever the address is not ``127.0.0.1`` (today only ``KIROCREW_BIND``
+    # widens it). A refused address binds loopback. Policy layer only.
+    "bind_address": ScopeSpec(RULESET, matcher="ip"),
+    # Extra dashboard origins beyond this machine's loopback origins on the bound
+    # port (RFC appendix row "Dashboard origins"): ``dashboard.url``, the
+    # configured host, ``KIROCREW_CORS_ORIGINS``, ``KIROCREW_ALLOWED_LOOPBACK_PORTS``
+    # and the rest. Queried per origin (``scheme://host[:port]``) by
+    # ``dashboard.urls.build_allowed_origins``; a refused origin is dropped. The
+    # tailnet origin answers to ``capabilities.tailnet_origin`` instead. The
+    # ``origin`` matcher keeps IPv6 brackets literal.
+    "dashboard_origins": ScopeSpec(RULESET, matcher="origin"),
+    # Desktop control (RFC appendix row "Desktop control"). ANDed with the
+    # operator's ``computer_use.json`` opt-in in ``computer_use.enable_state``;
+    # a policy-layer ``enabled: false`` keeps the feature off. Default True so
+    # naming the row without ``enabled`` keeps today's behaviour.
+    "capabilities.computer_use": ScopeSpec(CAPABILITY, capability_default=True),
     # "Connect your phone": minting a live mobile session credential (tailnet QR
     # or one-time login link) is an auth-surface widening an enterprise POLICY
     # must be able to close wholesale or narrow per method. The ``methods``

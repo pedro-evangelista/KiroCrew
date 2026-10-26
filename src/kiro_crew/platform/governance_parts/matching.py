@@ -2,7 +2,7 @@
 
 The enforcer-owned registries the governance model never reads from a policy or profile
 document: ``_ORDINAL_SCALES`` (each ordinal's strictness order) and ``_MATCHERS`` (the
-five match strategies, extended only through ``register_matcher``). Beside them, the
+seven match strategies, extended only through ``register_matcher``). Beside them, the
 item normalization the ``path`` matcher applies (``_norm_item``) and the host the
 ``host`` matcher tests (``_url_host``). A new match strategy goes here.
 
@@ -136,6 +136,75 @@ def _match_mcp(item: str, pattern: str) -> bool:
     return False
 
 
+#: ``scheme://host[:port]`` and nothing else: no path, query, fragment or userinfo.
+_ORIGIN_ITEM_RE = re.compile(r"^[a-z][a-z0-9+.-]*://(\[[0-9a-f:.]+\]|[^/?#@\s\[\]:]+)(:[0-9]+)?$")
+
+
+def _origin_form(text: str) -> str:
+    """*text* in one canonical origin spelling, so equal origins compare equal.
+
+    Lower-case; no trailing ``/``; no default port; the host's root dot dropped; an
+    IP literal in canonical form (``[2001:0db8::0:1]`` is ``[2001:db8::1]``); a
+    non-ASCII host in IDNA ``xn--`` form, as clients send it. Glob characters in a
+    policy entry are left as they are. Text that is not ``scheme://host[:port]``
+    comes back lower-cased only, and :func:`_match_origin` refuses it.
+    """
+    import ipaddress
+
+    t = text.strip().rstrip("/")
+    m = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*)://(\[[^\]]*\]|[^/?#@\s\[\]:]+)(?::([0-9]+))?$", t)
+    if not m:
+        return t.casefold()
+    scheme, host, port = m.group(1).lower(), m.group(2), m.group(3)
+    bracketed = host.startswith("[")
+    raw = host[1:-1] if bracketed else host.rstrip(".")
+    try:
+        ip = ipaddress.ip_address(raw)
+        host = f"[{ip.compressed}]" if ip.version == 6 else ip.compressed
+    except ValueError:
+        if bracketed:
+            host = host.casefold()
+        else:
+            try:
+                host = (
+                    raw.encode("idna").decode("ascii").lower() if not raw.isascii() else raw.lower()
+                )
+            except UnicodeError:
+                host = raw.casefold()
+    if port is not None:
+        port = str(int(port))
+        if (scheme, port) in (("http", "80"), ("https", "443")):
+            port = None
+    return f"{scheme}://{host}:{port}" if port else f"{scheme}://{host}"
+
+
+def _match_origin(item: str, pattern: str) -> bool:
+    """Case-insensitive fnmatch for ``scheme://host[:port]`` origins, brackets literal.
+
+    Item and entry are both put in browser form first (:func:`_origin_form`), so
+    ``https://evil.example.com/`` and ``https://evil.example.com:443`` name the same
+    origin. An IPv6 origin carries ``[...]``, which fnmatch would read as a character
+    class, so ``[`` and ``]`` match only themselves; ``*`` and ``?`` stay wildcards.
+    An item that is not exactly ``scheme://host[:port]`` matches nothing: a ``*``
+    must not let a path, query or userinfo stand in for the host.
+    """
+    it = _origin_form(item)
+    if not _ORIGIN_ITEM_RE.match(it):
+        return False
+    literal = "".join({"[": "[[]", "]": "[]]"}.get(ch, ch) for ch in _origin_form(pattern))
+    return fnmatch.fnmatchcase(it, literal)
+
+
+def _match_ip(item: str, pattern: str) -> bool:
+    """An IP literal compared in canonical form (``0:0::0`` is ``::``); else a glob."""
+    import ipaddress
+
+    try:
+        return ipaddress.ip_address(item.strip()) == ipaddress.ip_address(pattern.strip())
+    except ValueError:
+        return _match_identifier(item, pattern)
+
+
 # Match-strategy registry.  A ScopedRuleset names its matcher; permits() looks
 # it up here.  Adding a domain = (optionally) one new entry, not evaluator code.
 _MATCHERS: Dict[str, Callable[[str, str], bool]] = {
@@ -144,6 +213,8 @@ _MATCHERS: Dict[str, Callable[[str, str], bool]] = {
     "path": _match_path,
     "host": _match_host,
     "mcp": _match_mcp,
+    "origin": _match_origin,
+    "ip": _match_ip,
 }
 
 _DEFAULT_MATCHER = "identifier"

@@ -123,7 +123,8 @@ def _derive_step(
     Ordered by what blocks what, so the operator is never sent to a switch that
     cannot help yet. Each branch is a different remedy:
 
-    1. ``pinned`` — an administrator's ceiling forbids tailnet access. Dead end;
+    1. ``pinned`` — an administrator's ceiling forbids tailnet access, or its
+       ``tailnets`` list refuses this tailnet (``probe.governance_refused``). Dead end;
        nothing below is actionable, and offering a toggle would be a lie.
     2. ``install`` / ``start_daemon`` / ``sign_in`` / ``enable_magicdns`` — the
        ways there is no usable tailnet name, kept apart because "install
@@ -157,7 +158,7 @@ def _derive_step(
     7. ``publish`` — everything is in place; one action left.
     8. ``ready`` — published and trusted.
     """
-    if pinned:
+    if pinned or probe.governance_refused:
         return "pinned"
     if not probe.installed:
         return "untrusted_cli" if probe.refused_cli else "install"

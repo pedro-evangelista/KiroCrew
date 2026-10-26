@@ -62,6 +62,12 @@ POLICY_VERSION = 1
 _PROFILE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
 
+#: Rulesets an enterprise policy may only write as an allow list. A deny list of
+#: origins misses every other spelling of the same origin; an allow list fails
+#: closed (RFC D3).
+ALLOW_ONLY_IN_ENTERPRISE = frozenset({"dashboard_origins"})
+
+
 def _parse_control(scope: str, spec: ScopeSpec, raw: object, *, is_policy: bool) -> object:
     """Parse one raw JSON control value into its archetype, per the catalog."""
     if not isinstance(raw, dict):
@@ -70,6 +76,15 @@ def _parse_control(scope: str, spec: ScopeSpec, raw: object, *, is_policy: bool)
         raise PlatformCompositionError(f"scope {scope!r} must be an object")
     if spec.kind == RULESET:
         ruleset = ScopedRuleset.from_dict(raw, matcher=spec.matcher, scope=scope)
+        if is_policy and ruleset.mode != "allow" and scope in ALLOW_ONLY_IN_ENTERPRISE:
+            from kiro_crew import edition
+
+            if edition.is_enterprise():
+                raise PlatformCompositionError(
+                    f"scope {scope!r} must use an allow list in the enterprise edition "
+                    '("mode": "allow"); a deny list cannot name every spelling of an '
+                    "origin, so it is refused"
+                )
         for floor in spec.always_permitted:
             # An ``always_permitted`` identifier is one this scope may not forbid.
             # Two reasons qualify, and the catalog entry says which applies: the

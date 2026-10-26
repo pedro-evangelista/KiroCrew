@@ -393,7 +393,7 @@ def _tailnet(args: argparse.Namespace) -> None:
         # endpoint reports what the running server already trusts, which is the
         # startup value. Conflating them is how "resolvable" gets rendered as
         # "in the allowlist".
-        name = tailnet.self_dns_name()
+        name, refused = tailnet.name_and_policy_refusal()
         state = tailnet_serve.serve_state(port)
         print("👻 Tailnet dashboard access")
         if pinned:
@@ -404,7 +404,13 @@ def _tailnet(args: argparse.Namespace) -> None:
             f"   Trust:      {'enabled' if enabled else 'disabled'} "
             f"(dashboard.tailscale.enabled)"
         )
-        print(f"   Name:       {name or '— (no tailnet name resolvable right now)'}")
+        if refused:
+            name_line = (
+                "— (this tailnet is not permitted by policy: capabilities.tailnet_origin tailnets)"
+            )
+        else:
+            name_line = name or "— (no tailnet name resolvable right now)"
+        print(f"   Name:       {name_line}")
         published = state.published
         label = {True: "yes", False: "no", None: "unknown"}[published]
         print(f"   Published:  {label} — {state.detail}")
@@ -463,6 +469,18 @@ def _tailnet(args: argparse.Namespace) -> None:
             "     kirocrew config set dashboard.tailscale.enabled true\n"
             "   (If config.local.json disables it, set it there instead: "
             "`kirocrew config set --local dashboard.tailscale.enabled true`.)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Asked BEFORE publishing, for the same reason as the trust switch above: a
+    # tailnet the policy's ``tailnets`` list refuses would be published and then
+    # never trusted, answering 403.
+    if tailnet.name_and_policy_refusal(audit_tool="tailnet_cli_up")[1]:
+        print(
+            "❌ Your administrator's security policy does not permit this tailnet "
+            "(capabilities.tailnet_origin tailnets), so the gateway would never trust "
+            "it — refusing to publish a dashboard that would answer 403.",
             file=sys.stderr,
         )
         sys.exit(1)
