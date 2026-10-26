@@ -94,6 +94,58 @@ def build_command(args: argparse.Namespace, runner: Path) -> str:
     return " ".join(assignments) + f" python3 {shlex.quote(str(runner))}; exit 0"
 
 
+def build_v2_hooks(command: str) -> list[dict]:
+    hooks = []
+    for event, matcher in [
+        ("AgentSpawn", ""),
+        ("UserPromptSubmit", ""),
+        ("PreToolUse", "*"),
+        ("PostToolUse", "*"),
+        ("Stop", ""),
+    ]:
+        hooks.append(
+            {
+                "id": f"otelv2-{event.lower()}",
+                "name": f"OTEL v2 {event}",
+                "event": event,
+                "matcher": matcher,
+                "matcher_mode": "glob",
+                "command": command,
+                "skills": [],
+                "timeout": 30,
+                "enabled": True,
+            }
+        )
+    return hooks
+
+
+def has_complete_v2_installation(hooks: list[dict], expected: list[dict]) -> bool:
+    v2_hooks = [hook for hook in hooks if str(hook.get("id", "")).startswith("otelv2-")]
+    if len(v2_hooks) != len(expected):
+        return False
+    expected_by_id = {hook["id"]: hook for hook in expected}
+    if {hook.get("id") for hook in v2_hooks} != set(expected_by_id):
+        return False
+    required_fields = (
+        "event",
+        "matcher",
+        "matcher_mode",
+        "command",
+        "skills",
+        "timeout",
+        "enabled",
+    )
+    for hook in v2_hooks:
+        want = expected_by_id[hook["id"]]
+        if any(hook.get(field) != want[field] for field in required_fields):
+            return False
+    return all(
+        hook.get("enabled") is False
+        for hook in hooks
+        if str(hook.get("id", "")).startswith("otel-")
+    )
+
+
 def main(argv=None) -> int:
     args = parser().parse_args(argv)
     path = Path(args.hooks)
@@ -102,45 +154,29 @@ def main(argv=None) -> int:
     if not isinstance(hooks, list):
         raise ValueError(f"hooks.json must contain a hooks list: {path}")
 
-    if args.action == "enable" and any(
-        str(hook.get("id", "")).startswith("otelv2-") for hook in hooks
-    ):
-        print("enable: already configured; no changes")
-        return 0
+    original_enable_backup = latest_enable_backup(path)
+    desired_v2_hooks = None
+    backup_action = args.action
+    if args.action == "enable":
+        runner = Path(__file__).resolve().with_name("otel-crew-hook-v2.py")
+        desired_v2_hooks = build_v2_hooks(build_command(args, runner))
+        if has_complete_v2_installation(hooks, desired_v2_hooks):
+            print("enable: already configured; no changes")
+            return 0
+        has_v2_entries = any(str(hook.get("id", "")).startswith("otelv2-") for hook in hooks)
+        if has_v2_entries and original_enable_backup is not None:
+            backup_action = "repair"
 
-    original_enable_backup = latest_enable_backup(path) if args.action == "disable" else None
-
-    backup = backup_path(path, args.action)
+    backup = backup_path(path, backup_action)
     shutil.copy2(path, backup)
     print("backup:", backup)
 
     hooks[:] = [hook for hook in hooks if not str(hook.get("id", "")).startswith("otelv2-")]
     if args.action == "enable":
-        runner = Path(__file__).resolve().with_name("otel-crew-hook-v2.py")
-        command = build_command(args, runner)
         for hook in hooks:
             if str(hook.get("id", "")).startswith("otel-"):
                 hook["enabled"] = False
-        for event, matcher in [
-            ("AgentSpawn", ""),
-            ("UserPromptSubmit", ""),
-            ("PreToolUse", "*"),
-            ("PostToolUse", "*"),
-            ("Stop", ""),
-        ]:
-            hooks.append(
-                {
-                    "id": f"otelv2-{event.lower()}",
-                    "name": f"OTEL v2 {event}",
-                    "event": event,
-                    "matcher": matcher,
-                    "matcher_mode": "glob",
-                    "command": command,
-                    "skills": [],
-                    "timeout": 30,
-                    "enabled": True,
-                }
-            )
+        hooks.extend(desired_v2_hooks or [])
     else:
         restore_legacy_enabled_values(hooks, original_enable_backup)
 

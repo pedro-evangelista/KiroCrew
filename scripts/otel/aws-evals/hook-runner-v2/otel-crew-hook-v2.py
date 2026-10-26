@@ -46,6 +46,7 @@ DRY_RUN_FILE = os.environ.get("KIRO_OTEL_DRY_RUN_FILE")
 MAX_VALUE = 8192
 MAX_PENDING_CALLS = 5_000
 MAX_SESSION_STATES = 5_000
+MAX_AGENTS_PER_TURN = 500
 # Deduplication is exact for the most recent 10,000 distinct producer event IDs.
 # IDs evicted beyond this finite replay window may be accepted as new deliveries.
 MAX_SEEN_EVENT_IDS = 10_000
@@ -267,6 +268,18 @@ def quarantine_event(event: dict, reason: str) -> None:
     log_error(f"event correlation rejected: {reason}; event_id={record['event_id']!r}")
 
 
+def forget_event_identity(state: dict, event_id: Any) -> None:
+    """Do not consume dedup capacity for an event rejected by session admission."""
+    if not isinstance(event_id, str) or not event_id:
+        return
+    seen = state.get("seen_event_ids", [])
+    try:
+        seen.remove(event_id)
+    except ValueError:
+        pass
+    state.get("seen_event_signatures", {}).pop(event_id, None)
+
+
 def tool_output(event: dict) -> Any:
     response = get(event, "tool_response", "toolResponse", "tool_result", "toolResult", "result")
     if isinstance(response, dict):
@@ -302,27 +315,31 @@ def prune_sessions(
 ) -> None:
     """Drop least-recent idle sessions, pinning live state except during migration."""
     sessions = state.setdefault("sessions", {})
+    for entry in sessions.values():
+        entry.pop("last_seen_ns", None)
+        turn = entry.get("turn")
+        agents = turn.get("agents") if isinstance(turn, dict) else None
+        if isinstance(agents, dict) and len(agents) > MAX_AGENTS_PER_TURN:
+            turn["agents"] = dict(list(agents.items())[:MAX_AGENTS_PER_TURN])
+            turn["agent_limit_logged"] = True
+            log_error("trimmed over-limit agent span state in an open turn")
     pending_sessions = {item.get("session") for item in state.get("pending", [])}
     idle = [
-        (entry.get("last_seen_ns", 0), sid)
+        sid
         for sid, entry in sessions.items()
         if entry.get("turn") is None and sid not in pending_sessions
     ]
-    idle.sort(key=lambda item: item[0])
     while len(sessions) > limit and idle:
-        _, sid = idle.pop(0)
+        sid = idle.pop(0)
         sessions.pop(sid, None)
     if migrate_over_limit and len(sessions) > limit:
-        remaining = sorted(
-            sessions,
-            key=lambda sid: sessions[sid].get("last_seen_ns", 0),
-        )
+        remaining = list(sessions)
         while len(sessions) > limit and remaining:
             sessions.pop(remaining.pop(0), None)
         log_error("pruned over-limit session state while migrating to bounded state")
 
 
-def session_entry(state: dict, sid: str, now: int) -> dict | None:
+def session_entry(state: dict, sid: str) -> dict | None:
     sessions = state.setdefault("sessions", {})
     entry = sessions.get(sid)
     if entry is None:
@@ -330,10 +347,11 @@ def session_entry(state: dict, sid: str, now: int) -> dict | None:
         if len(sessions) >= MAX_SESSION_STATES:
             log_error("session state limit reached; ignoring new session")
             return None
-        entry = {"trace_id": None, "turn": None, "last_seen_ns": int(now)}
+        entry = {"trace_id": None, "turn": None}
         sessions[sid] = entry
     else:
-        entry["last_seen_ns"] = max(int(entry.get("last_seen_ns", 0)), int(now))
+        sessions.pop(sid)
+        sessions[sid] = entry
     return entry
 
 
@@ -661,8 +679,7 @@ def handle(event: dict, now: int) -> list[dict]:
             signatures.pop(old_event_id, None)
 
     if sid and sid in state["sessions"]:
-        session = state["sessions"][sid]
-        session["last_seen_ns"] = max(int(session.get("last_seen_ns", 0)), int(now))
+        state["sessions"][sid] = state["sessions"].pop(sid)
 
     if is_tool_event and not get(event, "tool_call_id", "toolCallId"):
         quarantine_event(event, "tool_call_id")
@@ -680,14 +697,16 @@ def handle(event: dict, now: int) -> list[dict]:
 
     if name in {"agentspawn", "sessionstart"}:
         if sid:
-            if session_entry(state, sid, now) is None:
+            if session_entry(state, sid) is None:
+                forget_event_identity(state, event_id)
                 save_state(state)
                 return spans
 
     elif name in {"userpromptsubmit", "promptsubmit"}:
         sid = sid or "unknown"
-        sess = session_entry(state, sid, now)
+        sess = session_entry(state, sid)
         if sess is None:
+            forget_event_identity(state, event_id)
             save_state(state)
             return spans
         if sess.get("turn"):
@@ -777,15 +796,19 @@ def handle(event: dict, now: int) -> list[dict]:
         if subagent:
             turn = (state["sessions"].get(sid) or {}).get("turn") if sid else None
             if turn is not None:
-                turn["agents"].setdefault(
-                    subagent,
-                    {
+                agents = turn["agents"]
+                if subagent in agents:
+                    agents[subagent]["last_ns"] = now
+                elif len(agents) < MAX_AGENTS_PER_TURN:
+                    agents[subagent] = {
                         "span_id": secrets.token_hex(8),
                         "role": role,
                         "start_ns": now,
                         "last_ns": now,
-                    },
-                )
+                    }
+                elif not turn.get("agent_limit_logged"):
+                    log_error("per-turn agent span limit reached; overflow tools use the turn root")
+                    turn["agent_limit_logged"] = True
 
     elif name == "posttooluse":
         key = correlation_key(event)

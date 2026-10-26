@@ -47,9 +47,9 @@ attr, span, safe_text = v2.attr, v2.span, v2.safe_text
 home = Path.home()
 MAX_EMITTED_TURNS = 5_000
 MAX_EMITTED_RUNS = 1_000
-# Keep the newest N IDs per ledger. Pruned IDs are covered by a monotonic
-# end-time watermark; late records at/below it are intentionally suppressed.
-# --force is the explicit escape hatch for operator-requested re-export.
+# Keep the newest N exact IDs per ledger. Duplicates older than this window may
+# be re-emitted; unseen events are never discarded due to timestamp ordering.
+# --force bypasses retained-ID suppression for operator-requested re-export.
 _REPLAY_LIMITS = {"emitted": MAX_EMITTED_TURNS, "runs": MAX_EMITTED_RUNS}
 args = None
 STATE = None
@@ -126,58 +126,37 @@ def producer_session_attributes(event):
     return v2.session_attributes(own, parent)
 
 
-def replay_is_suppressed(state, ledger, identity, timestamp_ns, force=False):
-    """Suppress retained IDs and all event times at/before a pruned-ID watermark."""
+def replay_is_suppressed(state, ledger, identity, force=False, known_ids=None):
+    """Suppress only exact IDs still present in the bounded replay window."""
     if force:
         return False
     if ledger not in _REPLAY_LIMITS:
         raise ValueError(f"unknown replay ledger: {ledger}")
-    identities = state.setdefault(ledger, [])
-    if identity in identities:
-        timestamps = state.setdefault(f"{ledger}_timestamps", {})
-        if identity not in timestamps and len(timestamps) < _REPLAY_LIMITS[ledger]:
-            timestamps[identity] = int(timestamp_ns)
-        return True
-    return int(timestamp_ns) <= int(state.get(f"{ledger}_through_ns", 0))
+    identities = known_ids if known_ids is not None else state.setdefault(ledger, [])
+    return identity in identities
 
 
-def prune_replay_ledger(state, ledger, fallback_timestamp_ns=0, limit=None):
-    """Cap the retained IDs, advancing the event-time replay boundary."""
+def prune_replay_ledger(state, ledger, limit=None):
+    """Retain only the newest exact IDs and discard earlier schema fields."""
     if ledger not in _REPLAY_LIMITS:
         raise ValueError(f"unknown replay ledger: {ledger}")
     maximum = _REPLAY_LIMITS[ledger] if limit is None else max(1, int(limit))
     identities = state.setdefault(ledger, [])
-    timestamps = state.setdefault(f"{ledger}_timestamps", {})
-    watermark_key = f"{ledger}_through_ns"
-    watermark = int(state.get(watermark_key, 0))
-    while len(identities) > maximum:
-        removed = identities.pop(0)
-        removed_timestamp = timestamps.pop(removed, None)
-        watermark = max(
-            watermark,
-            int(removed_timestamp if removed_timestamp is not None else fallback_timestamp_ns),
-        )
-    retained = set(identities)
-    for identity in tuple(timestamps):
-        if identity not in retained:
-            del timestamps[identity]
-    state[watermark_key] = watermark
+    state[ledger] = identities[-maximum:]
+    state.pop(f"{ledger}_timestamps", None)
+    state.pop(f"{ledger}_through_ns", None)
 
 
-def remember_replay_id(state, ledger, identity, timestamp_ns, limit=None):
-    """Retain a bounded ID window; pruning advances its event-time watermark."""
+def remember_replay_id(state, ledger, identity, limit=None):
+    """Move an exact ID to the newest position in the bounded replay window."""
     if ledger not in _REPLAY_LIMITS:
         raise ValueError(f"unknown replay ledger: {ledger}")
     maximum = _REPLAY_LIMITS[ledger] if limit is None else max(1, int(limit))
-    timestamp_ns = int(timestamp_ns)
     identities = state.setdefault(ledger, [])
-    timestamps = state.setdefault(f"{ledger}_timestamps", {})
     if identity in identities:
-        timestamps[identity] = max(int(timestamps.get(identity, 0)), timestamp_ns)
-        return
+        identities.remove(identity)
     identities.append(identity)
-    timestamps[identity] = timestamp_ns
-    prune_replay_ledger(state, ledger, timestamp_ns, maximum)
+    prune_replay_ledger(state, ledger, maximum)
 
 
 def mark_workflow_turns_used(run, turns, used):
@@ -932,12 +911,12 @@ def main(argv=None):
 
 
 def run():
+    prune_replay_ledger(state, "emitted")
+    prune_replay_ledger(state, "runs")
+    known_turn_ids = set(state["emitted"])
+    known_run_ids = set(state["runs"])
     hook_turns = v2_turns()
     rows = drop_replay(load_frames())
-    scan_frontier_ns = max(
-        (int(row["ts_ns"]) for row in rows),
-        default=int((time.time() - args.since * 60) * 1e9),
-    )
     turns = build_turns(rows)
     attach_prompts(turns)
     sm = {}
@@ -985,10 +964,8 @@ def run():
             e for e in run["events"] if e["type"] in {"run_finished", "run_failed", "run_cancelled"}
         ]
         terminal_ns = iso_ns(terminal[-1]["ts"]) if terminal else None
-        if terminal_ns is not None:
-            scan_frontier_ns = max(scan_frontier_ns, terminal_ns)
-            if replay_is_suppressed(state, "runs", run_id, terminal_ns, args.force):
-                continue
+        if replay_is_suppressed(state, "runs", run_id, args.force, known_run_ids):
+            continue
         sk = resolve_session_key(run)
         if terminal:
             completion = next(
@@ -1004,8 +981,8 @@ def run():
         got = workflow_spans(run, turns, used, workflow_orphans, used_orphans, hook_turns)
         if got:
             spans += got
-            if terminal_ns is not None:
-                remember_replay_id(state, "runs", run_id, terminal_ns)
+            remember_replay_id(state, "runs", run_id)
+            known_run_ids.add(run_id)
     # 2. ordinary chat turns
     for t in turns:
         if id(t) in used:
@@ -1013,14 +990,7 @@ def run():
         key = (
             f"{t['sid']}@{t.get('turn_id') or (str(t.get('pid')) + ':' + str(t.get('request_id')))}"
         )
-        turn_end_ns = int(t["end"])
-        if replay_is_suppressed(state, "emitted", key, turn_end_ns, args.force):
-            continue
-        if (
-            t.get("workflow_run_id")
-            and not args.force
-            and turn_end_ns <= int(state.get("runs_through_ns", 0))
-        ):
+        if replay_is_suppressed(state, "emitted", key, args.force, known_turn_ids):
             continue
         sid_key = resolve_session_key(t, sm)
         if sid_key is None and not args.all_sessions:
@@ -1052,10 +1022,11 @@ def run():
         else:
             turn_output = turn_spans(t, sid_key or f"acp:{t['sid']}", secrets.token_hex(16), None)
         spans += turn_output
-        remember_replay_id(state, "emitted", key, turn_end_ns)
+        remember_replay_id(state, "emitted", key)
+        known_turn_ids.add(key)
     v2.export(spans)
-    prune_replay_ledger(state, "emitted", scan_frontier_ns)
-    prune_replay_ledger(state, "runs", scan_frontier_ns)
+    prune_replay_ledger(state, "emitted")
+    prune_replay_ledger(state, "runs")
     STATE.parent.mkdir(parents=True, exist_ok=True)
     STATE.write_text(json.dumps(state), encoding="utf-8")
     n_turn = sum(1 for s in spans if s["name"].startswith("invoke_agent"))

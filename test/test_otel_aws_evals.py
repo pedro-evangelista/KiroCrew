@@ -296,6 +296,109 @@ def test_hook_does_not_evict_open_session_at_capacity(monkeypatch, tmp_path):
     assert state["sessions"]["active"]["turn"] is not None
 
 
+def test_hook_capacity_rejection_leaves_event_retryable(monkeypatch, tmp_path):
+    hook = load_hook(monkeypatch, tmp_path)
+    hook.MAX_SESSION_STATES = 1
+    hook.handle(
+        {
+            "hook_event_name": "UserPromptSubmit",
+            "event_id": "active-prompt",
+            "session_key": "active",
+        },
+        170,
+    )
+    overflow_prompt = {
+        "hook_event_name": "UserPromptSubmit",
+        "event_id": "overflow-prompt",
+        "session_key": "overflow",
+    }
+
+    assert hook.handle(overflow_prompt, 180) == []
+    hook.handle(
+        {"hook_event_name": "Stop", "event_id": "active-stop", "session_key": "active"},
+        190,
+    )
+    retry_spans = hook.handle(overflow_prompt, 200)
+
+    assert any(span["name"] == "user.prompt" for span in retry_spans)
+    assert set(hook.load_state()["sessions"]) == {"overflow"}
+
+
+def test_hook_caps_agent_spans_per_turn_with_root_fallback(monkeypatch, tmp_path):
+    hook = load_hook(monkeypatch, tmp_path)
+    hook.MAX_AGENTS_PER_TURN = 2
+    hook.handle(
+        {"hook_event_name": "UserPromptSubmit", "event_id": "prompt", "session_key": "chat-1"},
+        140,
+    )
+    for suffix, role in (("a", "worker-a"), ("b", "worker-b"), ("c", "worker-c")):
+        hook.handle(
+            {
+                "hook_event_name": "PreToolUse",
+                "event_id": f"pre-{suffix}",
+                "tool_call_id": f"call-{suffix}",
+                "session_key": "chat-1",
+                "subagent_id": f"agent-{suffix}",
+                "agent_role": role,
+                "tool_name": "ReadFile",
+            },
+            150,
+        )
+
+    spans = hook.handle(
+        {"hook_event_name": "Stop", "event_id": "stop", "session_key": "chat-1"},
+        160,
+    )
+    agent_names = {span["name"] for span in spans if span["name"].startswith("invoke_agent ")}
+    tool_spans = [span for span in spans if span["name"].startswith("execute_tool ")]
+    root_span = next(span for span in spans if span["name"] == "invoke_agent")
+    overflow_tool = next(
+        span for span in tool_spans if attribute(span, "gen_ai.tool.call.id") == "call-c"
+    )
+
+    assert agent_names == {"invoke_agent worker-a", "invoke_agent worker-b"}
+    assert len(tool_spans) == 3
+    assert overflow_tool["parentSpanId"] == root_span["spanId"]
+
+
+def test_hook_migrates_oversized_open_turn_agent_state(monkeypatch, tmp_path):
+    hook = load_hook(monkeypatch, tmp_path)
+    hook.MAX_AGENTS_PER_TURN = 2
+    hook.save_state(
+        {
+            "sessions": {
+                "chat-1": {
+                    "trace_id": "a" * 32,
+                    "turn": {
+                        "trace_id": "a" * 32,
+                        "span_id": "b" * 16,
+                        "start_ns": 1,
+                        "prompt": "prompt",
+                        "agents": {
+                            f"agent-{suffix}": {
+                                "span_id": f"{suffix}" * 16,
+                                "role": f"worker-{suffix}",
+                                "start_ns": suffix_index,
+                                "last_ns": suffix_index,
+                            }
+                            for suffix_index, suffix in enumerate(("a", "b", "c"), 1)
+                        },
+                    },
+                }
+            },
+            "pending": [],
+        }
+    )
+
+    spans = hook.handle(
+        {"hook_event_name": "Stop", "event_id": "stop", "session_key": "chat-1"},
+        10,
+    )
+    agent_names = {span["name"] for span in spans if span["name"].startswith("invoke_agent ")}
+
+    assert agent_names == {"invoke_agent worker-a", "invoke_agent worker-b"}
+
+
 def test_workflow_turn_joins_by_run_agent_and_acp_session(monkeypatch, tmp_path):
     converter = load_converter(monkeypatch, tmp_path)
     stamp = "2026-10-21T10:00:00+00:00"
@@ -428,24 +531,20 @@ def test_workflow_turn_does_not_join_by_timestamp_name_or_input(monkeypatch, tmp
 
 
 @pytest.mark.parametrize("ledger", ["emitted", "runs"], ids=["turns", "workflow-runs"])
-def test_converter_bounds_replay_ledger_without_reemitting_pruned_ids(
-    monkeypatch, tmp_path, ledger
-):
+def test_converter_bounds_exact_id_replay_window(monkeypatch, tmp_path, ledger):
     converter = load_converter(monkeypatch, tmp_path)
     state = {}
     for number in range(1, 5):
-        converter.remember_replay_id(state, ledger, f"id-{number}", number * 10, limit=2)
+        converter.remember_replay_id(state, ledger, f"id-{number}", limit=2)
 
     assert state[ledger] == ["id-3", "id-4"]
-    assert len(state[f"{ledger}_timestamps"]) == 2
-    assert state[f"{ledger}_through_ns"] == 20
-    assert converter.replay_is_suppressed(state, ledger, "id-1", 10)
-    assert converter.replay_is_suppressed(state, ledger, "late-id", 20)
-    assert not converter.replay_is_suppressed(state, ledger, "new-id", 21)
-    assert not converter.replay_is_suppressed(state, ledger, "id-1", 10, force=True)
+    assert converter.replay_is_suppressed(state, ledger, "id-4")
+    assert not converter.replay_is_suppressed(state, ledger, "id-1")
+    assert not converter.replay_is_suppressed(state, ledger, "unseen-late-id")
+    assert not converter.replay_is_suppressed(state, ledger, "id-1", force=True)
 
 
-def test_converter_does_not_reexport_spans_after_turn_ledger_pruning(monkeypatch, tmp_path):
+def test_converter_allows_replay_after_turn_id_eviction(monkeypatch, tmp_path):
     home = tmp_path / "home"
     home.mkdir()
     monkeypatch.setenv("HOME", str(home))
@@ -511,16 +610,199 @@ def test_converter_does_not_reexport_spans_after_turn_ledger_pruning(monkeypatch
     ]
 
     converter.main(args)
-    first_export = (tmp_path / "otlp.jsonl").read_text(encoding="utf-8")
+    first_export = (tmp_path / "otlp.jsonl").read_text(encoding="utf-8").splitlines()
     persisted = json.loads(state_path.read_text(encoding="utf-8"))
     converter.main(args)
+    exports = (tmp_path / "otlp.jsonl").read_text(encoding="utf-8").splitlines()
 
     assert len(persisted["emitted"]) == 1
-    assert persisted["emitted_through_ns"] == 200
+    assert "emitted_through_ns" not in persisted
+    assert len(exports) == 2
+    assert len(json.loads(exports[0])["resourceSpans"][0]["scopeSpans"][0]["spans"]) == 2
+    assert len(json.loads(exports[1])["resourceSpans"][0]["scopeSpans"][0]["spans"]) == 1
+    assert exports[0] == first_export[0]
+
+
+def test_converter_emits_unseen_late_turn_despite_legacy_watermark(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("KIROCREW_HOME", str(home))
+    monkeypatch.setenv("KIRO_OTEL_DRY_RUN_FILE", str(tmp_path / "otlp.jsonl"))
+    converter = load_converter(monkeypatch, tmp_path)
+    frames = tmp_path / "frames.jsonl"
+    rows = [
+        {
+            "pid": 12,
+            "id": 1,
+            "method": "session/prompt",
+            "dir": "client_to_agent",
+            "kind": "request",
+            "ids": {"sessionId": "acp-late", "session_key": "chat-late", "turn_id": "late"},
+            "ts_ns": "100",
+        },
+        {
+            "pid": 12,
+            "id": 1,
+            "dir": "agent_to_client",
+            "kind": "response",
+            "ids": {"sessionId": "acp-late"},
+            "nums": {},
+            "ts_ns": "400",
+        },
+    ]
+    frames.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    prompts = tmp_path / "prompts.jsonl"
+    prompts.write_text("", encoding="utf-8")
+    session_map = tmp_path / "session-map.json"
+    session_map.write_text("{}", encoding="utf-8")
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    state_path = tmp_path / "emitted-state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "emitted": ["acp-earlier@turn-a", "acp-later@turn-b"],
+                "emitted_timestamps": {"acp-earlier@turn-a": 100, "acp-later@turn-b": 500},
+                "runs": [],
+                "emitted_through_ns": 500,
+                "runs_through_ns": 500,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    converter.main(
+        [
+            "--frames",
+            str(frames),
+            "--prompts",
+            str(prompts),
+            "--session-map",
+            str(session_map),
+            "--runs-dir",
+            str(runs_dir),
+            "--state",
+            str(state_path),
+            "--since",
+            "1000000000",
+            "--grace",
+            "0",
+        ]
+    )
+    otlp_path = tmp_path / "otlp.jsonl"
+    payloads = (
+        [json.loads(line) for line in otlp_path.read_text(encoding="utf-8").splitlines()]
+        if otlp_path.exists()
+        else []
+    )
+    spans = [
+        span
+        for payload in payloads
+        for resource in payload["resourceSpans"]
+        for scope in resource["scopeSpans"]
+        for span in scope["spans"]
+    ]
+    migrated_state = json.loads(state_path.read_text(encoding="utf-8"))
+
+    assert any(span["name"] == "invoke_agent" for span in spans)
+    assert "emitted_through_ns" not in migrated_state
+    assert "runs_through_ns" not in migrated_state
+
+
+def test_converter_does_not_reexport_suppressed_workflow_turn_as_chat(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("KIROCREW_HOME", str(home))
+    monkeypatch.setenv("KIRO_OTEL_DRY_RUN_FILE", str(tmp_path / "otlp.jsonl"))
+    converter = load_converter(monkeypatch, tmp_path)
+    frames = tmp_path / "frames.jsonl"
+    rows = [
+        {
+            "pid": 13,
+            "id": 7,
+            "method": "session/prompt",
+            "dir": "client_to_agent",
+            "kind": "request",
+            "ids": {
+                "sessionId": "acp-workflow",
+                "session_key": "chat-workflow",
+                "workflow_run_id": "run-1",
+                "agent_id": "agent-1",
+                "turn_id": "turn-1",
+            },
+            "ts_ns": "100",
+        },
+        {
+            "pid": 13,
+            "id": 7,
+            "dir": "agent_to_client",
+            "kind": "response",
+            "ids": {"sessionId": "acp-workflow"},
+            "nums": {},
+            "ts_ns": "200",
+        },
+    ]
+    frames.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    prompts = tmp_path / "prompts.jsonl"
+    prompts.write_text("", encoding="utf-8")
+    session_map = tmp_path / "session-map.json"
+    session_map.write_text("{}", encoding="utf-8")
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    run = {
+        "run_id": "run-1",
+        "session_key": "chat-workflow",
+        "name": "workflow",
+        "args": {},
+        "result": "done",
+        "events": [
+            {"type": "run_started", "ts": "2020-01-01T00:00:00+00:00", "data": {}},
+            {
+                "type": "agent_started",
+                "ts": "2020-01-01T00:00:00+00:00",
+                "data": {"agent_id": "agent-1", "label": "worker"},
+            },
+            {
+                "type": "agent_session_bound",
+                "ts": "2020-01-01T00:00:00+00:00",
+                "data": {"agent_id": "agent-1", "acp_session_id": "acp-workflow"},
+            },
+            {
+                "type": "agent_finished",
+                "ts": "2020-01-01T00:00:00+00:00",
+                "data": {"agent_id": "agent-1", "ok": True},
+            },
+            {"type": "run_finished", "ts": "2020-01-01T00:00:01+00:00", "data": {}},
+        ],
+    }
+    (runs_dir / "wf_run-1.json").write_text(json.dumps(run), encoding="utf-8")
+    args = [
+        "--frames",
+        str(frames),
+        "--prompts",
+        str(prompts),
+        "--session-map",
+        str(session_map),
+        "--runs-dir",
+        str(runs_dir),
+        "--state",
+        str(tmp_path / "emitted-state.json"),
+        "--since",
+        "1000000000",
+        "--grace",
+        "0",
+    ]
+
+    converter.main(args)
+    first_export = (tmp_path / "otlp.jsonl").read_text(encoding="utf-8")
+    converter.main(args)
+
     assert (tmp_path / "otlp.jsonl").read_text(encoding="utf-8") == first_export
 
 
-def test_pruned_workflow_run_does_not_reexport_its_acp_turn_as_chat(monkeypatch, tmp_path):
+def test_suppressed_workflow_run_does_not_reexport_its_acp_turn_as_chat(monkeypatch, tmp_path):
     converter = load_converter(monkeypatch, tmp_path)
     run = {
         "run_id": "run-old",
@@ -702,6 +984,58 @@ def test_installer_repeated_actions_restore_original_enabled_states(tmp_path):
     restored = json.loads(hooks_path.read_text(encoding="utf-8"))
 
     assert restored["hooks"] == original["hooks"]
+
+
+def test_installer_repairs_partial_v2_hooks_preserving_original_backup_and_user_hooks(tmp_path):
+    hooks_path = tmp_path / "hooks.json"
+    original = {
+        "hooks": [
+            {"id": "otel-legacy", "enabled": True, "command": "legacy"},
+            {"id": "custom", "enabled": True, "command": "before"},
+        ]
+    }
+    hooks_path.write_text(json.dumps(original), encoding="utf-8")
+    installer = load_module(INSTALLER_PATH, "aws_eval_installer_partial_install_under_test")
+    installer.main(["enable", "--hooks", str(hooks_path)])
+    partial = json.loads(hooks_path.read_text(encoding="utf-8"))
+    partial["hooks"] = [
+        {**hook, "command": "stale", "enabled": False} if hook["id"] == "otelv2-stop" else hook
+        for hook in partial["hooks"]
+        if hook["id"] != "otelv2-userpromptsubmit"
+    ]
+    next(hook for hook in partial["hooks"] if hook["id"] == "custom")["command"] = "operator edit"
+    hooks_path.write_text(json.dumps(partial), encoding="utf-8")
+
+    installer.main(["enable", "--hooks", str(hooks_path)])
+    repaired = json.loads(hooks_path.read_text(encoding="utf-8"))
+    v2_hooks = [hook for hook in repaired["hooks"] if hook["id"].startswith("otelv2-")]
+
+    assert {hook["id"] for hook in v2_hooks} == {
+        "otelv2-agentspawn",
+        "otelv2-userpromptsubmit",
+        "otelv2-pretooluse",
+        "otelv2-posttooluse",
+        "otelv2-stop",
+    }
+    assert all(hook["enabled"] is True for hook in v2_hooks)
+    assert (
+        next(hook for hook in repaired["hooks"] if hook["id"] == "custom")["command"]
+        == "operator edit"
+    )
+    assert len(list(tmp_path.glob("hooks.json.before-v2-enable-*.bak"))) == 1
+    assert len(list(tmp_path.glob("hooks.json.before-v2-repair-*.bak"))) == 1
+
+    installer.main(["disable", "--hooks", str(hooks_path)])
+    restored = json.loads(hooks_path.read_text(encoding="utf-8"))
+
+    assert (
+        next(hook for hook in restored["hooks"] if hook["id"] == "otel-legacy")["enabled"] is True
+    )
+    assert (
+        next(hook for hook in restored["hooks"] if hook["id"] == "custom")["command"]
+        == "operator edit"
+    )
+    assert not any(hook["id"].startswith("otelv2-") for hook in restored["hooks"])
 
 
 def run_packaged_tap(
