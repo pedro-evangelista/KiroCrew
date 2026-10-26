@@ -5,13 +5,15 @@
   install-v2.py disable [--hooks FILE]
 
 enable : backs up the file, disables the old otel-* runner entries (kept, not deleted),
-         adds five otelv2-* entries whose command ends with '; exit 0'.
-disable: backs up the file, removes the otelv2-* entries, re-enables the old otel-* ones.
+         adds five otelv2-* entries whose command ends with '; exit 0'. Repeated enable is a no-op.
+disable: backs up the file, removes otelv2-* entries, and restores legacy enabled values from
+         the latest enable backup. Without an enable backup, legacy values are left unchanged.
 Other hooks (for example the payload recorder) are left alone.
 """
 
 import argparse
 import json
+import re
 import shlex
 import shutil
 import time
@@ -47,6 +49,34 @@ def backup_path(path: Path, action: str) -> Path:
     return candidate
 
 
+def latest_enable_backup(path: Path) -> Path | None:
+    prefix = f"{path.name}.before-v2-enable-"
+    backups = []
+    for candidate in path.parent.glob(f"{prefix}*.bak"):
+        suffix = candidate.name[len(prefix) :]
+        match = re.fullmatch(r"(\d{8}-\d{6})(?:-(\d+))?\.bak", suffix)
+        if match:
+            backups.append(((match.group(1), int(match.group(2) or 0)), candidate))
+    return max(backups, default=(None, None), key=lambda item: item[0])[1]
+
+
+def restore_legacy_enabled_values(hooks: list[dict], backup: Path | None) -> None:
+    if backup is None:
+        return
+    original = json.loads(backup.read_text(encoding="utf-8"))
+    original_hooks = original.get("hooks", []) if isinstance(original, dict) else []
+    original_by_id = {hook.get("id"): hook for hook in original_hooks if isinstance(hook, dict)}
+    for hook in hooks:
+        hook_id = str(hook.get("id", ""))
+        if not hook_id.startswith("otel-") or hook_id not in original_by_id:
+            continue
+        prior = original_by_id[hook_id]
+        if "enabled" in prior:
+            hook["enabled"] = prior["enabled"]
+        else:
+            hook.pop("enabled", None)
+
+
 def build_command(args: argparse.Namespace, runner: Path) -> str:
     assignments = [
         f"KIRO_OTEL_ENDPOINT={shlex.quote(args.endpoint)}",
@@ -71,6 +101,14 @@ def main(argv=None) -> int:
     hooks = data.get("hooks") if isinstance(data, dict) else None
     if not isinstance(hooks, list):
         raise ValueError(f"hooks.json must contain a hooks list: {path}")
+
+    if args.action == "enable" and any(
+        str(hook.get("id", "")).startswith("otelv2-") for hook in hooks
+    ):
+        print("enable: already configured; no changes")
+        return 0
+
+    original_enable_backup = latest_enable_backup(path) if args.action == "disable" else None
 
     backup = backup_path(path, args.action)
     shutil.copy2(path, backup)
@@ -104,14 +142,14 @@ def main(argv=None) -> int:
                 }
             )
     else:
-        for hook in hooks:
-            if str(hook.get("id", "")).startswith("otel-"):
-                hook["enabled"] = True
+        restore_legacy_enabled_values(hooks, original_enable_backup)
 
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     print(
         f"{args.action}: "
-        + ", ".join(f"{hook['id']}={'on' if hook['enabled'] else 'off'}" for hook in hooks)
+        + ", ".join(
+            f"{hook['id']}={'on' if hook.get('enabled', True) else 'off'}" for hook in hooks
+        )
     )
     return 0
 

@@ -19,6 +19,8 @@ HOOK_PATH = ADAPTER_ROOT / "hook-runner-v2/otel-crew-hook-v2.py"
 INSTALLER_PATH = HOOK_PATH.with_name("install-v2.py")
 CONVERTER_PATH = ADAPTER_ROOT / "acp-tap/acp-to-spans.py"
 SHIM_BUILDER_PATH = ADAPTER_ROOT / "acp-tap/make-shim.sh"
+KIRO_SHIM_BUILDER_PATH = ADAPTER_ROOT / "acp-tap/make-kiro-shim.sh"
+TAP_SCRIPT_PATH = ADAPTER_ROOT / "acp-tap/acp-tap.js"
 
 
 def load_hook(monkeypatch, tmp_path):
@@ -235,6 +237,65 @@ def test_hook_bounds_pending_tool_state(monkeypatch, tmp_path):
     assert [item["tool_call_id"] for item in hook.load_state()["pending"]] == ["call-b"]
 
 
+def test_hook_prunes_idle_sessions_without_replaying_retained_events(monkeypatch, tmp_path):
+    hook = load_hook(monkeypatch, tmp_path)
+    hook.MAX_SESSION_STATES = 2
+    first_prompt = {
+        "hook_event_name": "UserPromptSubmit",
+        "event_id": "prompt-a",
+        "session_key": "chat-a",
+    }
+    for suffix, session in (("a", "chat-a"), ("b", "chat-b")):
+        hook.handle(
+            {
+                "hook_event_name": "UserPromptSubmit",
+                "event_id": f"prompt-{suffix}",
+                "session_key": session,
+            },
+            80,
+        )
+        hook.handle(
+            {"hook_event_name": "Stop", "event_id": f"stop-{suffix}", "session_key": session},
+            90,
+        )
+    hook.handle(
+        {"hook_event_name": "UserPromptSubmit", "event_id": "prompt-c", "session_key": "chat-c"},
+        100,
+    )
+
+    state = hook.load_state()
+    assert set(state["sessions"]) == {"chat-b", "chat-c"}
+    assert hook.handle(first_prompt, 110) == []
+    assert set(hook.load_state()["sessions"]) == {"chat-b", "chat-c"}
+
+
+def test_hook_does_not_evict_open_session_at_capacity(monkeypatch, tmp_path):
+    hook = load_hook(monkeypatch, tmp_path)
+    hook.MAX_SESSION_STATES = 1
+    hook.handle(
+        {
+            "hook_event_name": "UserPromptSubmit",
+            "event_id": "prompt-active",
+            "session_key": "active",
+        },
+        120,
+    )
+
+    ignored = hook.handle(
+        {
+            "hook_event_name": "UserPromptSubmit",
+            "event_id": "prompt-overflow",
+            "session_key": "overflow",
+        },
+        130,
+    )
+
+    state = hook.load_state()
+    assert ignored == []
+    assert set(state["sessions"]) == {"active"}
+    assert state["sessions"]["active"]["turn"] is not None
+
+
 def test_workflow_turn_joins_by_run_agent_and_acp_session(monkeypatch, tmp_path):
     converter = load_converter(monkeypatch, tmp_path)
     stamp = "2026-10-21T10:00:00+00:00"
@@ -364,6 +425,129 @@ def test_workflow_turn_does_not_join_by_timestamp_name_or_input(monkeypatch, tmp
     spans = converter.workflow_spans(run, [unrelated], set(), [], set(), [])
 
     assert not any(span["name"].startswith("execute_tool ") for span in spans)
+
+
+@pytest.mark.parametrize("ledger", ["emitted", "runs"], ids=["turns", "workflow-runs"])
+def test_converter_bounds_replay_ledger_without_reemitting_pruned_ids(
+    monkeypatch, tmp_path, ledger
+):
+    converter = load_converter(monkeypatch, tmp_path)
+    state = {}
+    for number in range(1, 5):
+        converter.remember_replay_id(state, ledger, f"id-{number}", number * 10, limit=2)
+
+    assert state[ledger] == ["id-3", "id-4"]
+    assert len(state[f"{ledger}_timestamps"]) == 2
+    assert state[f"{ledger}_through_ns"] == 20
+    assert converter.replay_is_suppressed(state, ledger, "id-1", 10)
+    assert converter.replay_is_suppressed(state, ledger, "late-id", 20)
+    assert not converter.replay_is_suppressed(state, ledger, "new-id", 21)
+    assert not converter.replay_is_suppressed(state, ledger, "id-1", 10, force=True)
+
+
+def test_converter_does_not_reexport_spans_after_turn_ledger_pruning(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("KIROCREW_HOME", str(home))
+    monkeypatch.setenv("KIRO_OTEL_DRY_RUN_FILE", str(tmp_path / "otlp.jsonl"))
+    converter = load_converter(monkeypatch, tmp_path)
+    monkeypatch.setitem(converter._REPLAY_LIMITS, "emitted", 1)
+    frames = tmp_path / "frames.jsonl"
+    frame_rows = []
+    for request_id, turn_id, start_ns, end_ns in (
+        (1, "turn-a", 100, 200),
+        (2, "turn-b", 300, 400),
+    ):
+        frame_rows.extend(
+            [
+                {
+                    "pid": 11,
+                    "id": request_id,
+                    "method": "session/prompt",
+                    "dir": "client_to_agent",
+                    "kind": "request",
+                    "ids": {
+                        "sessionId": "acp-1",
+                        "session_key": "chat-1",
+                        "turn_id": turn_id,
+                    },
+                    "ts_ns": str(start_ns),
+                },
+                {
+                    "pid": 11,
+                    "id": request_id,
+                    "dir": "agent_to_client",
+                    "kind": "response",
+                    "ids": {"sessionId": "acp-1"},
+                    "nums": {},
+                    "ts_ns": str(end_ns),
+                },
+            ]
+        )
+    frames.write_text("".join(json.dumps(row) + "\n" for row in frame_rows), encoding="utf-8")
+    prompts = tmp_path / "prompts.jsonl"
+    prompts.write_text("", encoding="utf-8")
+    session_map = tmp_path / "session-map.json"
+    session_map.write_text("{}", encoding="utf-8")
+    runs_dir = tmp_path / "runs"
+    runs_dir.mkdir()
+    state_path = tmp_path / "emitted-state.json"
+    args = [
+        "--frames",
+        str(frames),
+        "--prompts",
+        str(prompts),
+        "--session-map",
+        str(session_map),
+        "--runs-dir",
+        str(runs_dir),
+        "--state",
+        str(state_path),
+        "--since",
+        "1000000000",
+        "--grace",
+        "0",
+    ]
+
+    converter.main(args)
+    first_export = (tmp_path / "otlp.jsonl").read_text(encoding="utf-8")
+    persisted = json.loads(state_path.read_text(encoding="utf-8"))
+    converter.main(args)
+
+    assert len(persisted["emitted"]) == 1
+    assert persisted["emitted_through_ns"] == 200
+    assert (tmp_path / "otlp.jsonl").read_text(encoding="utf-8") == first_export
+
+
+def test_pruned_workflow_run_does_not_reexport_its_acp_turn_as_chat(monkeypatch, tmp_path):
+    converter = load_converter(monkeypatch, tmp_path)
+    run = {
+        "run_id": "run-old",
+        "events": [
+            {"type": "agent_started", "data": {"agent_id": "agent-1"}},
+            {
+                "type": "agent_session_bound",
+                "data": {"agent_id": "agent-1", "acp_session_id": "acp-1"},
+            },
+        ],
+    }
+    turn = {
+        "workflow_run_id": "run-old",
+        "agent_id": "agent-1",
+        "sid": "acp-1",
+    }
+    unrelated = {
+        "workflow_run_id": "run-old",
+        "agent_id": "agent-1",
+        "sid": "acp-other",
+    }
+    used = set()
+
+    converter.mark_workflow_turns_used(run, [turn, unrelated], used)
+
+    assert id(turn) in used
+    assert id(unrelated) not in used
 
 
 def test_acp_session_resolution_uses_agentcore_parent_root(monkeypatch, tmp_path):
@@ -497,7 +681,37 @@ def test_installer_backups_and_restores_hook_configuration(tmp_path):
     assert restored["hooks"] == original["hooks"]
 
 
-def run_packaged_tap(tmp_path, *, env_overrides=None, raw_input="tool payload"):
+def test_installer_repeated_actions_restore_original_enabled_states(tmp_path):
+    hooks_path = tmp_path / "hooks.json"
+    original = {
+        "hooks": [
+            {"id": "otel-enabled", "enabled": True, "command": "one"},
+            {"id": "otel-disabled", "enabled": False, "command": "two"},
+            {"id": "otel-default", "command": "default"},
+            {"id": "custom", "enabled": True, "command": "custom"},
+        ]
+    }
+    hooks_path.write_text(json.dumps(original), encoding="utf-8")
+    installer = load_module(INSTALLER_PATH, "aws_eval_installer_repeated_actions_under_test")
+
+    installer.main(["enable", "--hooks", str(hooks_path)])
+    installer.main(["enable", "--hooks", str(hooks_path)])
+    assert len(list(tmp_path.glob("hooks.json.before-v2-enable-*.bak"))) == 1
+    installer.main(["disable", "--hooks", str(hooks_path)])
+    installer.main(["disable", "--hooks", str(hooks_path)])
+    restored = json.loads(hooks_path.read_text(encoding="utf-8"))
+
+    assert restored["hooks"] == original["hooks"]
+
+
+def run_packaged_tap(
+    tmp_path,
+    *,
+    env_overrides=None,
+    raw_input="tool payload",
+    prompt_text="password=prompt-secret",
+    prompt_messages=None,
+):
     node = shutil.which("node")
     assert node, "Node.js is required to exercise the optional ACP tap"
     shim = tmp_path / "shim" / "@agentclientprotocol" / "codex-acp" / "dist" / "index.js"
@@ -526,7 +740,11 @@ def run_packaged_tap(tmp_path, *, env_overrides=None, raw_input="tool payload"):
         "  'rawOutput':'password=adapter-secret','title':'run'},\n"
         " {'sessionUpdate':'agent_message_chunk','content':{'text':'assistant text'}},\n"
         "]: print(json.dumps({'jsonrpc':'2.0','method':'session/update','params':"
-        "{'sessionId':'acp-1','update':update}}), flush=True)\n",
+        "{'sessionId':'acp-1','update':update}}), flush=True)\n"
+        "print(json.dumps({'jsonrpc':'2.0','id':1,'result':{'sessionId':'acp-old'}}), flush=True)\n"
+        "print(json.dumps({'jsonrpc':'2.0','method':'session/update','params':"
+        "{'sessionId':'acp-old','update':{'sessionUpdate':'agent_message_chunk',"
+        "'content':{'text':'context probe'}}}}), flush=True)\n",
         encoding="utf-8",
     )
     fake_adapter.chmod(0o700)
@@ -543,8 +761,8 @@ def run_packaged_tap(tmp_path, *, env_overrides=None, raw_input="tool payload"):
     )
     if env_overrides:
         env.update(env_overrides)
-    request = (
-        json.dumps(
+    if prompt_messages is None:
+        prompt_messages = [
             {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -552,15 +770,12 @@ def run_packaged_tap(tmp_path, *, env_overrides=None, raw_input="tool payload"):
                 "params": {
                     "sessionId": "acp-1",
                     "prompt": [
-                        {
-                            "text": "[CURRENT USER REQUEST -- respond to this]\npassword=prompt-secret"
-                        }
+                        {"text": f"[CURRENT USER REQUEST -- respond to this]\n{prompt_text}"}
                     ],
                 },
             }
-        )
-        + "\n"
-    )
+        ]
+    request = "".join(json.dumps(message) + "\n" for message in prompt_messages)
     command = [node, str(shim)]
     process = subprocess.Popen(
         command,
@@ -613,6 +828,38 @@ def test_packaged_shim_captures_redacted_bounded_content_by_default(tmp_path):
 
 
 @pytest.mark.skipif(os.name != "posix", reason="the packaged shell shim is POSIX-only")
+def test_packaged_shim_never_records_credential_environment_values(tmp_path):
+    api_key = "api-key-value-that-must-not-be-recorded"
+    access_key = "access-key-value-that-must-not-be-recorded"
+    frames, _, _ = run_packaged_tap(
+        tmp_path,
+        env_overrides={
+            "KIROCREW_API_KEY": api_key,
+            "KIROCREW_AWS_ACCESS_KEY_ID": access_key,
+        },
+    )
+    start = next(frame for frame in frames if frame.get("kind") == "process_start")
+
+    assert "env" not in start
+    assert "KIROCREW_API_KEY" in start["env_names"]
+    assert "KIROCREW_AWS_ACCESS_KEY_ID" in start["env_names"]
+    assert api_key not in json.dumps(frames)
+    assert access_key not in json.dumps(frames)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the packaged shell shim is POSIX-only")
+def test_prompt_capture_is_bounded_to_8192_even_with_larger_override(tmp_path):
+    frames, prompts, _ = run_packaged_tap(
+        tmp_path,
+        env_overrides={"ACP_TAP_MAX_PROMPT": "16000"},
+        prompt_text="p" * 9000,
+    )
+
+    assert len(prompts[0]["text"]) == 8192
+    assert prompts[0]["truncated"] is True
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the packaged shell shim is POSIX-only")
 def test_content_opt_out_does_not_disable_prompt_capture(tmp_path):
     frames, prompts, _ = run_packaged_tap(tmp_path, env_overrides={"ACP_TAP_CONTENT": "0"})
 
@@ -626,3 +873,65 @@ def test_prompt_opt_out_does_not_disable_content_capture(tmp_path):
 
     assert any(frame.get("content", {}).get("input") for frame in frames)
     assert prompts == []
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the Kiro shim builder is POSIX shell")
+def test_kiro_shim_builder_does_not_require_gnu_readlink(tmp_path):
+    adapter_dir = tmp_path / "acp-tap"
+    adapter_dir.mkdir()
+    builder = adapter_dir / "make-kiro-shim.sh"
+    builder.write_bytes(KIRO_SHIM_BUILDER_PATH.read_bytes())
+    (adapter_dir / "acp-tap.js").write_bytes(TAP_SCRIPT_PATH.read_bytes())
+    fake_cli = tmp_path / "fake-kiro"
+    fake_cli.write_text(f"#!{sys.executable}\npass\n", encoding="utf-8")
+    fake_cli.chmod(0o700)
+    tool_dir = tmp_path / "bin"
+    tool_dir.mkdir()
+    for name in ("node", "dirname", "basename", "mkdir", "chmod", "cat"):
+        executable = shutil.which(name)
+        assert executable
+        (tool_dir / name).symlink_to(executable)
+    env = {"HOME": str(tmp_path / "home"), "PATH": str(tool_dir)}
+    (tmp_path / "home").mkdir()
+
+    subprocess.run(
+        ["/bin/sh", str(builder), str(fake_cli)],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    wrapper = (adapter_dir / "shim/kiro-cli").read_text(encoding="utf-8")
+
+    assert "readlink" not in wrapper
+    assert f'ACP_TAP_REAL_BIN="{fake_cli}"' in wrapper
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the packaged shell shim is POSIX-only")
+def test_tap_bounds_unanswered_prompt_context_maps(tmp_path):
+    prompts = [
+        {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "session/prompt",
+            "params": {"sessionId": session, "workflow_run_id": f"run-{request_id}"},
+        }
+        for request_id, session in ((1, "acp-old"), (2, "acp-middle"), (3, "acp-new"))
+    ]
+    frames, _, _ = run_packaged_tap(
+        tmp_path,
+        env_overrides={"ACP_TAP_MAX_PROMPT_CONTEXTS": "2"},
+        prompt_messages=prompts,
+    )
+    response = next(frame for frame in frames if frame.get("kind") == "response")
+    old_session_update = next(
+        frame
+        for frame in frames
+        if frame.get("method") == "session/update"
+        and frame.get("ids", {}).get("sessionId") == "acp-old"
+    )
+
+    assert "workflow_run_id" not in response["ids"]
+    assert "workflow_run_id" not in old_session_update["ids"]

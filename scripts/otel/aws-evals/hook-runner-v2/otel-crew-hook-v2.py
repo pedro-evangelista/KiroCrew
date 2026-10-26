@@ -45,6 +45,10 @@ HOOK_TOOLS = os.environ.get(
 DRY_RUN_FILE = os.environ.get("KIRO_OTEL_DRY_RUN_FILE")
 MAX_VALUE = 8192
 MAX_PENDING_CALLS = 5_000
+MAX_SESSION_STATES = 5_000
+# Deduplication is exact for the most recent 10,000 distinct producer event IDs.
+# IDs evicted beyond this finite replay window may be accepted as new deliveries.
+MAX_SEEN_EVENT_IDS = 10_000
 GENERIC_NAMES = {"", "unknown", "terminal", "tool"}
 
 _REDACTIONS = (
@@ -293,8 +297,44 @@ def outcome(event: dict) -> tuple[str, str]:
     return "unknown", "unknown"
 
 
-def session_entry(state: dict, sid: str) -> dict:
-    return state["sessions"].setdefault(sid, {"trace_id": None, "turn": None})
+def prune_sessions(
+    state: dict, limit: int = MAX_SESSION_STATES, *, migrate_over_limit: bool = False
+) -> None:
+    """Drop least-recent idle sessions, pinning live state except during migration."""
+    sessions = state.setdefault("sessions", {})
+    pending_sessions = {item.get("session") for item in state.get("pending", [])}
+    idle = [
+        (entry.get("last_seen_ns", 0), sid)
+        for sid, entry in sessions.items()
+        if entry.get("turn") is None and sid not in pending_sessions
+    ]
+    idle.sort(key=lambda item: item[0])
+    while len(sessions) > limit and idle:
+        _, sid = idle.pop(0)
+        sessions.pop(sid, None)
+    if migrate_over_limit and len(sessions) > limit:
+        remaining = sorted(
+            sessions,
+            key=lambda sid: sessions[sid].get("last_seen_ns", 0),
+        )
+        while len(sessions) > limit and remaining:
+            sessions.pop(remaining.pop(0), None)
+        log_error("pruned over-limit session state while migrating to bounded state")
+
+
+def session_entry(state: dict, sid: str, now: int) -> dict | None:
+    sessions = state.setdefault("sessions", {})
+    entry = sessions.get(sid)
+    if entry is None:
+        prune_sessions(state, max(0, MAX_SESSION_STATES - 1))
+        if len(sessions) >= MAX_SESSION_STATES:
+            log_error("session state limit reached; ignoring new session")
+            return None
+        entry = {"trace_id": None, "turn": None, "last_seen_ns": int(now)}
+        sessions[sid] = entry
+    else:
+        entry["last_seen_ns"] = max(int(entry.get("last_seen_ns", 0)), int(now))
+    return entry
 
 
 # ---------------------------------------------------------------- emission
@@ -574,6 +614,7 @@ def close_turn(
 def handle(event: dict, now: int) -> list[dict]:
     spans: list[dict] = []
     state = load_state()
+    prune_sessions(state, MAX_SESSION_STATES, migrate_over_limit=True)
     name = re.sub(r"[^a-z]", "", str(get(event, "hook_event_name", "trigger", default="")).lower())
     sid, own_session_key, parent_session_key, _legacy_session_id = session_identity(event)
     subagent = get(event, "agent_id", "agentId", "subagent_id", "subagentId")
@@ -589,8 +630,9 @@ def handle(event: dict, now: int) -> list[dict]:
         save_state(state)
         return spans
 
-    # Drop duplicate delivery by producer event identity. Keep a bounded ledger
-    # in the state file so replay does not create duplicate spans.
+    # Suppress duplicates inside a fixed 10,000-distinct-ID window. IDs evicted
+    # beyond that window may be accepted as new deliveries; never infer replay
+    # identity from timestamps, names, or content.
     seen = state.setdefault("seen_event_ids", [])
     signatures = state.setdefault("seen_event_signatures", {})
     signature = {
@@ -613,10 +655,14 @@ def handle(event: dict, now: int) -> list[dict]:
     if event_id:
         seen.append(event_id)
         signatures[event_id] = signature
-        expired = seen[:-10_000]
-        del seen[:-10_000]
+        expired = seen[:-MAX_SEEN_EVENT_IDS]
+        del seen[:-MAX_SEEN_EVENT_IDS]
         for old_event_id in expired:
             signatures.pop(old_event_id, None)
+
+    if sid and sid in state["sessions"]:
+        session = state["sessions"][sid]
+        session["last_seen_ns"] = max(int(session.get("last_seen_ns", 0)), int(now))
 
     if is_tool_event and not get(event, "tool_call_id", "toolCallId"):
         quarantine_event(event, "tool_call_id")
@@ -634,11 +680,16 @@ def handle(event: dict, now: int) -> list[dict]:
 
     if name in {"agentspawn", "sessionstart"}:
         if sid:
-            session_entry(state, sid)
+            if session_entry(state, sid, now) is None:
+                save_state(state)
+                return spans
 
     elif name in {"userpromptsubmit", "promptsubmit"}:
         sid = sid or "unknown"
-        sess = session_entry(state, sid)
+        sess = session_entry(state, sid, now)
+        if sess is None:
+            save_state(state)
+            return spans
         if sess.get("turn"):
             close_turn(state, sid, now, spans, "", False, "next_prompt")
         prompt, truncated = safe_text(get(event, "prompt", "user_prompt", default=""))

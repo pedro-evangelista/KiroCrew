@@ -9,7 +9,11 @@ REAL="${1:-$HOME/.local/bin/kiro-cli}"
 NODE="$(command -v node || true)"
 [ -x "$REAL" ] || { echo "real kiro-cli not found: $REAL" >&2; exit 1; }
 [ -n "$NODE" ] || { echo "node not found on PATH" >&2; exit 1; }
-REAL="$(readlink -f "$REAL")"
+REAL_DIR=$(CDPATH= cd -P "$(dirname "$REAL")" && pwd) || {
+  echo "could not resolve real kiro-cli directory: $REAL" >&2
+  exit 1
+}
+REAL="$REAL_DIR/$(basename "$REAL")"
 mkdir -p shim
 W="$HERE/shim/kiro-cli"
 cat > "$W" <<EOF

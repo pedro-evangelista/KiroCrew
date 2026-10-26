@@ -45,10 +45,15 @@ v2.SERVICE_NAME = os.environ.get("KIRO_OTEL_SERVICE_NAME", "kiro-linux-acp")
 attr, span, safe_text = v2.attr, v2.span, v2.safe_text
 
 home = Path.home()
+MAX_EMITTED_TURNS = 5_000
+MAX_EMITTED_RUNS = 1_000
+# Keep the newest N IDs per ledger. Pruned IDs are covered by a monotonic
+# end-time watermark; late records at/below it are intentionally suppressed.
+# --force is the explicit escape hatch for operator-requested re-export.
+_REPLAY_LIMITS = {"emitted": MAX_EMITTED_TURNS, "runs": MAX_EMITTED_RUNS}
 args = None
 STATE = None
 state = {"emitted": [], "runs": []}
-emitted = set()
 
 
 def make_parser():
@@ -119,6 +124,86 @@ def resolve_session_key(event, session_map=None):
 def producer_session_attributes(event):
     _, own, parent, _ = v2.session_identity(event)
     return v2.session_attributes(own, parent)
+
+
+def replay_is_suppressed(state, ledger, identity, timestamp_ns, force=False):
+    """Suppress retained IDs and all event times at/before a pruned-ID watermark."""
+    if force:
+        return False
+    if ledger not in _REPLAY_LIMITS:
+        raise ValueError(f"unknown replay ledger: {ledger}")
+    identities = state.setdefault(ledger, [])
+    if identity in identities:
+        timestamps = state.setdefault(f"{ledger}_timestamps", {})
+        if identity not in timestamps and len(timestamps) < _REPLAY_LIMITS[ledger]:
+            timestamps[identity] = int(timestamp_ns)
+        return True
+    return int(timestamp_ns) <= int(state.get(f"{ledger}_through_ns", 0))
+
+
+def prune_replay_ledger(state, ledger, fallback_timestamp_ns=0, limit=None):
+    """Cap the retained IDs, advancing the event-time replay boundary."""
+    if ledger not in _REPLAY_LIMITS:
+        raise ValueError(f"unknown replay ledger: {ledger}")
+    maximum = _REPLAY_LIMITS[ledger] if limit is None else max(1, int(limit))
+    identities = state.setdefault(ledger, [])
+    timestamps = state.setdefault(f"{ledger}_timestamps", {})
+    watermark_key = f"{ledger}_through_ns"
+    watermark = int(state.get(watermark_key, 0))
+    while len(identities) > maximum:
+        removed = identities.pop(0)
+        removed_timestamp = timestamps.pop(removed, None)
+        watermark = max(
+            watermark,
+            int(removed_timestamp if removed_timestamp is not None else fallback_timestamp_ns),
+        )
+    retained = set(identities)
+    for identity in tuple(timestamps):
+        if identity not in retained:
+            del timestamps[identity]
+    state[watermark_key] = watermark
+
+
+def remember_replay_id(state, ledger, identity, timestamp_ns, limit=None):
+    """Retain a bounded ID window; pruning advances its event-time watermark."""
+    if ledger not in _REPLAY_LIMITS:
+        raise ValueError(f"unknown replay ledger: {ledger}")
+    maximum = _REPLAY_LIMITS[ledger] if limit is None else max(1, int(limit))
+    timestamp_ns = int(timestamp_ns)
+    identities = state.setdefault(ledger, [])
+    timestamps = state.setdefault(f"{ledger}_timestamps", {})
+    if identity in identities:
+        timestamps[identity] = max(int(timestamps.get(identity, 0)), timestamp_ns)
+        return
+    identities.append(identity)
+    timestamps[identity] = timestamp_ns
+    prune_replay_ledger(state, ledger, timestamp_ns, maximum)
+
+
+def mark_workflow_turns_used(run, turns, used):
+    """Keep exact run/agent/session workflow turns from falling into chat export."""
+    run_id = run.get("run_id")
+    if not run_id:
+        return
+    agent_ids = {
+        event.get("data", {}).get("agent_id")
+        for event in run.get("events", [])
+        if event.get("type") == "agent_started"
+    }
+    sessions = {
+        event.get("data", {}).get("agent_id"): event.get("data", {}).get("acp_session_id")
+        for event in run.get("events", [])
+        if event.get("type") == "agent_session_bound"
+    }
+    for turn in turns:
+        agent_id = turn.get("agent_id")
+        expected_session = sessions.get(agent_id)
+        if (
+            turn.get("workflow_run_id") == run_id
+            and agent_id in agent_ids
+            and (not expected_session or turn.get("sid") == expected_session)
+        ):
+            used.add(id(turn))
 
 
 def build_turns(rows):
@@ -824,7 +909,7 @@ def match_v2(t, sid_key, hook_turns):
 
 
 def main(argv=None):
-    global args, STATE, state, emitted
+    global args, STATE, state
     args = make_parser().parse_args(argv)
     STATE = Path(args.state) if args.state else v2.STATE_ROOT / "acp-spans-state.json"
     state = (
@@ -834,7 +919,6 @@ def main(argv=None):
     )
     state.setdefault("emitted", [])
     state.setdefault("runs", [])
-    emitted = set(state["emitted"])
     # One pass at a time: Stop hooks can start several converters close together.
     import fcntl
 
@@ -850,6 +934,10 @@ def main(argv=None):
 def run():
     hook_turns = v2_turns()
     rows = drop_replay(load_frames())
+    scan_frontier_ns = max(
+        (int(row["ts_ns"]) for row in rows),
+        default=int((time.time() - args.since * 60) * 1e9),
+    )
     turns = build_turns(rows)
     attach_prompts(turns)
     sm = {}
@@ -859,7 +947,7 @@ def run():
                 sm[v["sid"]] = key
     except (OSError, ValueError):
         pass
-    spans, used, used_orphans, new_keys = [], set(), set(), []
+    spans, used, used_orphans = [], set(), set()
     orphan_by_id = {}
     try:
         for line in (v2.STATE_ROOT / "orphan-tools.jsonl").read_text().splitlines():
@@ -889,14 +977,20 @@ def run():
         # journals; one such file must not abort ACP conversion for chat turns.
         if not isinstance(run, dict) or not isinstance(run.get("events"), list):
             continue
-        if run["run_id"] in state["runs"] and not args.force:
+        run_id = run.get("run_id")
+        if not isinstance(run_id, str) or not run_id:
             continue
-        sk = run.get("session_key")
+        mark_workflow_turns_used(run, turns, used)
         terminal = [
             e for e in run["events"] if e["type"] in {"run_finished", "run_failed", "run_cancelled"}
         ]
+        terminal_ns = iso_ns(terminal[-1]["ts"]) if terminal else None
+        if terminal_ns is not None:
+            scan_frontier_ns = max(scan_frontier_ns, terminal_ns)
+            if replay_is_suppressed(state, "runs", run_id, terminal_ns, args.force):
+                continue
+        sk = resolve_session_key(run)
         if terminal:
-            t_end = iso_ns(terminal[-1]["ts"])
             completion = next(
                 (
                     h
@@ -905,12 +999,13 @@ def run():
                 ),
                 None,
             )
-            if completion is None and time.time_ns() - t_end < args.grace * 1e9:
+            if completion is None and time.time_ns() - terminal_ns < args.grace * 1e9:
                 continue  # the completion turn is not closed yet; look again on the next pass
         got = workflow_spans(run, turns, used, workflow_orphans, used_orphans, hook_turns)
         if got:
             spans += got
-            state["runs"].append(run["run_id"])
+            if terminal_ns is not None:
+                remember_replay_id(state, "runs", run_id, terminal_ns)
     # 2. ordinary chat turns
     for t in turns:
         if id(t) in used:
@@ -918,7 +1013,14 @@ def run():
         key = (
             f"{t['sid']}@{t.get('turn_id') or (str(t.get('pid')) + ':' + str(t.get('request_id')))}"
         )
-        if key in emitted and not args.force:
+        turn_end_ns = int(t["end"])
+        if replay_is_suppressed(state, "emitted", key, turn_end_ns, args.force):
+            continue
+        if (
+            t.get("workflow_run_id")
+            and not args.force
+            and turn_end_ns <= int(state.get("runs_through_ns", 0))
+        ):
             continue
         sid_key = resolve_session_key(t, sm)
         if sid_key is None and not args.all_sessions:
@@ -950,11 +1052,12 @@ def run():
         else:
             turn_output = turn_spans(t, sid_key or f"acp:{t['sid']}", secrets.token_hex(16), None)
         spans += turn_output
-        new_keys.append(key)
+        remember_replay_id(state, "emitted", key, turn_end_ns)
     v2.export(spans)
-    state["emitted"] = sorted(emitted | set(new_keys))
+    prune_replay_ledger(state, "emitted", scan_frontier_ns)
+    prune_replay_ledger(state, "runs", scan_frontier_ns)
     STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps(state))
+    STATE.write_text(json.dumps(state), encoding="utf-8")
     n_turn = sum(1 for s in spans if s["name"].startswith("invoke_agent"))
     n_tool = sum(1 for s in spans if s["name"].startswith("execute_tool"))
     n_workflow = sum(

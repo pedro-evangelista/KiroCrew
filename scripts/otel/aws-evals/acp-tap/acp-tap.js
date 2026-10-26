@@ -31,9 +31,18 @@ const MAX_DEPTH = 4;
 const CONTENT = process.env.ACP_TAP_CONTENT === '1';
 const PROMPTS = process.env.ACP_TAP_PROMPTS === '1';  // opt-in: also write prompt text to a separate file (see recordPrompt)
 const PROMPTS_OUT = process.env.ACP_TAP_PROMPTS_OUT || path.join(os.homedir(), '.kiro', 'otel-traces', 'acp-prompts.jsonl');
-const MAX_PROMPT = parseInt(process.env.ACP_TAP_MAX_PROMPT || '16000', 10);
+const REQUESTED_MAX_PROMPT = parseInt(process.env.ACP_TAP_MAX_PROMPT || '8192', 10);
+const MAX_PROMPT = Number.isFinite(REQUESTED_MAX_PROMPT)
+  ? Math.max(1, Math.min(8192, REQUESTED_MAX_PROMPT))
+  : 8192;
 const MAX_PROMPT_RECORDS = parseInt(process.env.ACP_TAP_MAX_PROMPT_RECORDS || '500', 10);
 const MAX_FIELD = parseInt(process.env.ACP_TAP_MAX_FIELD || '8192', 10);
+const REQUESTED_MAX_PROMPT_CONTEXTS = parseInt(process.env.ACP_TAP_MAX_PROMPT_CONTEXTS || '500', 10);
+const MAX_PROMPT_CONTEXTS = Number.isFinite(REQUESTED_MAX_PROMPT_CONTEXTS)
+  ? Math.max(1, Math.min(500, REQUESTED_MAX_PROMPT_CONTEXTS))
+  : 500;
+// Each map keeps the 500 most recently set contexts; overflow drops inherited
+// identity, never recovering it from time, names, or message content.
 const REDACTIONS = [
   [/\b(AKIA|ASIA)[0-9A-Z]{16}\b/gi, '[REDACTED_AWS_KEY]'],
   [/(bearer\s+)[A-Za-z0-9._~+\/-]+=*/gi, '$1[REDACTED]'],
@@ -66,7 +75,6 @@ const ID_KEYS = new Set(['exit_code', 'signal', 'terminal_id', 'messageId', 'nam
   'workflow_run_id', 'agent_id', 'parent_session_key', 'evaluation_session_id', 'turn_id',
   'sessionUpdate', 'protocolVersion', 'mode', 'modeId', 'optionId']);
 const NUM_HINT = /token|count|duration|cost/i;
-const SAFE_ENV = (k) => /^KIROCREW_(?!.*(TOKEN|SECRET|KEY_MATERIAL))/.test(k) && !/(TOKEN|SECRET|PASSWORD)/i.test(k);
 
 let recording = !DISABLED;
 let written = 0;
@@ -89,6 +97,11 @@ const promptContextsByRpcId = new Map();
 // Crew puts the real request after this line, behind about 58K of its own system prompt and session context.
 const PROMPT_MARKER = process.env.ACP_TAP_PROMPT_MARKER || '[CURRENT USER REQUEST -- respond to this]';
 const PROMPTS_FULL = process.env.ACP_TAP_PROMPTS_FULL === '1';  // debugging: keep the whole text when there is no marker
+function setBoundedContext(map, key, value) {
+  if (map.has(key)) map.delete(key);
+  map.set(key, value);
+  while (map.size > MAX_PROMPT_CONTEXTS) map.delete(map.keys().next().value);
+}
 function recordPrompt(msg) {
   // Prompt text is sensitive (Crew's system prompt plus the user's words). It goes to its own 0600 file, never the frames file,
   // redacted and bounded, and only the part after the marker: the request itself. Without a marker nothing but the length is kept.
@@ -159,8 +172,8 @@ function record(dir, line) {
     if (dir === 'client_to_agent' && msg.method === 'session/prompt' && sessionId) {
       const context = Object.fromEntries(['turn_id', 'workflow_run_id', 'agent_id', 'session_key', 'sessionKey', 'session_id', 'parent_session_key', 'parentSessionKey']
         .filter((key) => ids[key]).map((key) => [key, ids[key]]));
-      activePromptContexts.set(`${process.pid}:${sessionId}`, { requestId: String(msg.id), context });
-      promptContextsByRpcId.set(rpcKey, { sessionId, context });
+      setBoundedContext(activePromptContexts, `${process.pid}:${sessionId}`, { requestId: String(msg.id), context });
+      setBoundedContext(promptContextsByRpcId, rpcKey, { sessionId, context });
     } else {
       const promptContext = dir === 'agent_to_client' && kind === 'response'
         ? promptContextsByRpcId.get(rpcKey)
@@ -236,10 +249,8 @@ function main() {
   }
   if (recording) {
     openOut();
-    const env = {};
-    for (const k of Object.keys(process.env)) if (SAFE_ENV(k)) env[k] = String(process.env[k]).slice(0, 120);
     emit({ ts_ns: (BigInt(Date.now()) * 1000000n).toString(), pid: process.pid, dir: 'tap', kind: 'process_start', ppid: process.ppid, content_mode: CONTENT,
-      cwd: path.basename(process.cwd()), real, argv: process.argv.slice(2).map((a) => a.slice(0, 40)), env,
+      cwd: path.basename(process.cwd()), real, argv: process.argv.slice(2).map((a) => a.slice(0, 40)),
       env_names: Object.keys(process.env).filter((k) => /^KIROCREW_|^CODEX_|^ACP_/.test(k)).sort() });
   }
   const child = spawn(realBin ? realBin : process.execPath, realBin ? process.argv.slice(2) : [real, ...process.argv.slice(2)], { stdio: ['pipe', 'pipe', 'inherit'], env: process.env });
