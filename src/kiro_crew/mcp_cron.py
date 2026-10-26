@@ -736,6 +736,28 @@ def _owned_by(jobs: list[CronJob], session_key: str) -> list[CronJob]:
     return [j for j in jobs if j.session_key == session_key]
 
 
+_AUTO_APPROVAL_OWNER_ONLY = (
+    "Error: approval_mode 'auto' can only be turned on by the owner. "
+    "Create or update the job without it, then ask the user to turn on "
+    "auto-approve for this job on the Schedule page."
+)
+
+
+def _refuse_tool_auto_approval(tool_name: str, args: dict[str, Any]) -> str:
+    """Refuse a tool call that would turn on ``approval_mode="auto"``.
+
+    An auto job approves every tool call of every later fire with nobody
+    watching, so it is the owner's switch: the Schedule page's owner-gated
+    routes set it. A tool caller cannot be told apart from other code running
+    in the same session (both reach this handler the same way), so no tool
+    call may set it. ``""`` (the default, hook-based approval) is unaffected.
+    """
+    if args.get("approval_mode") != "auto":
+        return ""
+    _log_cron_denial(tool_name, _AUTO_APPROVAL_OWNER_ONLY)
+    return _AUTO_APPROVAL_OWNER_ONLY
+
+
 def _call_tool_inner(name: str, args: dict[str, Any]) -> str:
     """Execute a cron tool (post-validation)."""
     svc = CronService(base_dir=config_dir())
@@ -791,6 +813,9 @@ def _call_tool_inner(name: str, args: dict[str, Any]) -> str:
         if cap_err:
             _log_cron_denial("cron_add", cap_err)
             return cap_err
+        auto_err = _refuse_tool_auto_approval("cron_add", args)
+        if auto_err:
+            return auto_err
         n = args["name"]
         msg = args.get("message", "")
         script = args.get("script", "")
@@ -1020,6 +1045,9 @@ def _call_tool_inner(name: str, args: dict[str, Any]) -> str:
         own_err = _check_cron_job_ownership(svc, jid)
         if own_err:
             return own_err
+        auto_err = _refuse_tool_auto_approval("cron_update", args)
+        if auto_err:
+            return auto_err
         kwargs: dict[str, Any] = {}
         for key in ("name", "message"):
             if key in args and args[key]:
