@@ -987,6 +987,8 @@ def run():
     for t in turns:
         if id(t) in used:
             continue
+        if t.get("workflow_run_id") and not args.force and t["workflow_run_id"] in known_run_ids:
+            continue
         key = (
             f"{t['sid']}@{t.get('turn_id') or (str(t.get('pid')) + ':' + str(t.get('request_id')))}"
         )

@@ -797,6 +797,7 @@ def test_converter_does_not_reexport_suppressed_workflow_turn_as_chat(monkeypatc
 
     converter.main(args)
     first_export = (tmp_path / "otlp.jsonl").read_text(encoding="utf-8")
+    (runs_dir / "wf_run-1.json").unlink()
     converter.main(args)
 
     assert (tmp_path / "otlp.jsonl").read_text(encoding="utf-8") == first_export
