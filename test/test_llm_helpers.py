@@ -593,13 +593,12 @@ class TestStreamAndCollectTelemetryContext:
             "parent_session_key": "parent-session",
         }
 
-        with patch("asyncio.sleep", new_callable=AsyncMock):
-            result = await stream_and_collect(
-                provider,
-                "question",
-                allow_image=False,
-                telemetry_context=telemetry_context,
-            )
+        result = await stream_and_collect(
+            provider,
+            "question",
+            allow_image=False,
+            telemetry_context=telemetry_context,
+        )
 
         assert result == "ok"
         assert provider.metadata_calls == [
