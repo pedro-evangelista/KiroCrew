@@ -216,3 +216,54 @@ async def test_main_chat_tool_hook_includes_native_tool_and_own_session_ids(tmp_
     assert hook_event["tool_call_id"] == "native-tool-call-7"
     assert hook_event["session_key"] == "dashboard:s1"
     assert hook_event["turn_id"] == fixed_turn_id
+
+
+@pytest.mark.asyncio
+async def test_spec_lifecycle_hooks_share_chat_turn_id(tmp_path):
+    from kiro_crew.dashboard.chat_turn.turn_spec_hooks import _fire
+    from kiro_crew.hooks import (
+        HOOK_EVENT_STOP,
+        HOOK_EVENT_USER_PROMPT_SUBMIT,
+        ScriptHookResult,
+        ScriptHookStore,
+    )
+
+    turn_id = "0123456789abcdef0123456789abcdef"
+    hook_store = ScriptHookStore(tmp_path)
+    hook_store.create(
+        {"name": "prompt-hook", "event": HOOK_EVENT_USER_PROMPT_SUBMIT, "command": "echo test"}
+    )
+    hook_store.create({"name": "stop-hook", "event": HOOK_EVENT_STOP, "command": "echo test"})
+    state = SimpleNamespace(_hook_store=hook_store)
+    slot = SimpleNamespace(key="s1")
+    turn = SimpleNamespace(
+        session_key="dashboard:s1",
+        slot=slot,
+        state=state,
+        _spec_hooks_unreadable=False,
+        _spec_hooks=[],
+        _spec_hooks_cwd=None,
+        _recovery_turn_id=turn_id,
+    )
+
+    def successful_result(hook, *args, **kwargs):
+        return ScriptHookResult(
+            hook_id=hook.id,
+            hook_name=hook.name,
+            event=hook.event,
+            exit_code=0,
+        )
+
+    with patch("kiro_crew.hooks.run_script_hook", new_callable=AsyncMock) as mock_run:
+        mock_run.side_effect = successful_result
+        await _fire(turn, HOOK_EVENT_USER_PROMPT_SUBMIT, "hello")
+        await _fire(turn, HOOK_EVENT_STOP, "goodbye")
+
+    prompt_event = mock_run.await_args_list[0].args[2]
+    stop_event = mock_run.await_args_list[1].args[2]
+    assert prompt_event["turn_id"] == turn_id
+    assert stop_event["turn_id"] == turn_id
+    assert prompt_event["session_key"] == "dashboard:s1"
+    assert stop_event["session_key"] == "dashboard:s1"
+    assert "tool_call_id" not in prompt_event
+    assert "tool_call_id" not in stop_event
