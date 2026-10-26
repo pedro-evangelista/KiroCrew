@@ -2219,6 +2219,15 @@ native `tool_call_id`, the ACP `session_id`, and applicable active
 remains distinct from `parent_session_key`; the existing audit-source gate keeps
 chat hooks from firing twice and hook failures remain non-fatal.
 
+Workflow agent prompts compose those identity strings per send from the
+workflow run, the `a<call_index>` agent, the root parent session key and that
+agent call's turn ID. The session-binding callback is separate from
+`telemetry_context`: after a workflow provider has an ACP session ID, it reports
+that ID to the workflow event stream as `agent_session_bound`. Neither value is
+stored on a reusable ACP provider, named session handle or pooled worker. The
+prompt metadata contains no workflow content, and the five-key workflow event
+envelope remains unchanged (see [workflows](workflows.md#run-event-stream)).
+
 ### Extension Notifications
 
 `stream_events()` yields events for kiro-cli extension notifications:
