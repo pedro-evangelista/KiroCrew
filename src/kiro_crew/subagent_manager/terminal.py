@@ -456,6 +456,13 @@ class TerminalCoordinator(ManagerComponent):
             # Owed only to the parent that ended, so this skip settles it.
             info._report_delivered = True
             return True
+        if info._left_for_next_start:
+            # Left untombstoned for the next start's orphan sweep (``_run``'s cancel
+            # arm). ``_on_done`` would queue the announce in a slot the restart loses
+            # and mark the run reported. Nothing is marked delivered, so held wave
+            # siblings and owed reports stay visible to that sweep and the replay.
+            logger.info("Subagent %s: stopped by the shutdown; left for the next start", info.id)
+            return True
         try:
             await asyncio.wait_for(self._manager._on_done(info), timeout=_ON_DONE_TIMEOUT)
             # The outcome has REACHED the parent. Recorded before any further
