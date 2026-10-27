@@ -480,6 +480,15 @@ def test_merge_queue_readiness_budget_covers_ci_critical_path() -> None:
         strategy = spec.get("strategy") or {}
         matrix = strategy.get("matrix")
         cap = strategy.get("max-parallel")
+        # CodeBuild-routed jobs use a conditional expression; on the hosted
+        # fallback the expression evaluates to the `|| N` value.  Use that
+        # fallback for worst-case round counting so the budget test guards
+        # the hosted path.
+        if isinstance(cap, str):
+            import re as _re
+
+            m = _re.search(r"\|\|\s*(\d+)\s*\}\}", cap)
+            cap = int(m.group(1)) if m else None
         if not isinstance(matrix, dict) or not isinstance(cap, int):
             return 1
         axes = [v for k, v in matrix.items() if k not in ("include", "exclude")]
