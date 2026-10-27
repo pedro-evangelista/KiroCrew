@@ -1177,7 +1177,7 @@ class _PumpMixin(ManagerComponent):
         # the same shape the chat runner's own host-cancelled approval writes.
         # Seeding them and writing in a ``finally`` is what makes the pair total
         # over every exit; an unanswered request left in the fold's ``pending``
-        # map forever is the same silence this fix removes, one step along.
+        # map forever is the same missing record of the wait, one step along.
         _log_origin: tuple[str, int] = ("", 0)
         _log_decision: str = "rejected"
         _log_by: str = "host"

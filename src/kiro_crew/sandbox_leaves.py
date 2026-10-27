@@ -898,8 +898,8 @@ _CREW_CHILD_WITHHELD_LEAVES: tuple[str, ...] = (
     # IDENTIFIERS as well as a decision -- ``Grant.to_dict`` writes ``account`` and
     # ``arn`` -- so a read tells a foreign child which AWS account and caller identity
     # the owner works as. It sits on the read+write keystone floor, so no in-sandbox
-    # reader had it before this change either: the app backend that consults it is not
-    # an enforced-harness child. Withholding it costs nothing that worked.
+    # reader has it anyway: the app backend that consults it is not an
+    # enforced-harness child. Withholding it costs nothing that works.
     "aws_service_consent.json",
     # The ONE entry here that holds no secret. It carries the launcher and sealed
     # extension of a single harness's tool gate, and only that harness's child has to

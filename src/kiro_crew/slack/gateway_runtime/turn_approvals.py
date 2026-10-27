@@ -152,17 +152,17 @@ def _interactive_approval(
         # autonudge) that supplies neither an authoritative parent session
         # nor a ``slot_resolver`` has no owning conversation, and there is
         # no way to guess one. Borrowing "the first slot that is running"
-        # hijacked an unrelated chat and was wrong in three directions at
+        # hijacks an unrelated chat and is wrong in three directions at
         # once:
-        #   * the prompt surfaced in a conversation that never raised it,
+        #   * the prompt surfaces in a conversation that never raised it,
         #     with a truncated label and no provenance;
-        #   * the Trust control resolved against that innocent slot, so
-        #     trusting a cron's command granted blanket auto-approval to
-        #     the borrowed session (and did nothing for the cron);
-        #   * conversely, a borrowed slot that already had trust enabled
-        #     silently auto-approved the background command below —
+        #   * the Trust control resolves against that innocent slot, so
+        #     trusting a cron's command grants blanket auto-approval to
+        #     the borrowed session (and does nothing for the cron);
+        #   * conversely, a borrowed slot that already has trust enabled
+        #     silently auto-approves the background command below —
         #     privilege the cron was never granted.
-        # Unowned approvals now carry slot="" and are surfaced ONLY on the
+        # Unowned approvals carry slot="" and are surfaced ONLY on the
         # global approvals surface (notification feed / /api/approvals).
         if parent_slot:
             approval_slot = parent_slot

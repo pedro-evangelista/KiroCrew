@@ -467,14 +467,14 @@ def serve_state(port: int) -> ServeState:
     if doc in (None, {}, []):
         return ServeState(False, False, "No serve configuration is active.", port_free=True)
     needles = (f"http://127.0.0.1:{port}", f"http://localhost:{port}")
-    # Two narrowings, and each closes a way the previous predicate was wrong.
+    # Two narrowings, and each closes a way a broader predicate goes wrong.
     #
-    # Port: "is the dashboard served anywhere" answered yes for a dashboard on
-    # 8443 while something else held 443, and the withdrawal then removed the
+    # Port: "is the dashboard served anywhere" answers yes for a dashboard on
+    # 8443 while something else holds 443, and the withdrawal then removes the
     # other thing.
     #
-    # Mount: within 443, "is our target somewhere under here" answered yes when
-    # ours was at `/foo` and a stranger's handler was at `/` — the mount we
+    # Mount: within 443, "is our target somewhere under here" answers yes when
+    # ours is at `/foo` and a stranger's handler is at `/` — the mount we
     # actually remove. So the question is narrowed to exactly what withdrawal
     # touches: is the handler at SERVE_MOUNT, on SERVE_HTTPS_PORT, ours?
     scoped = _port_scoped_subtrees(doc, SERVE_HTTPS_PORT)

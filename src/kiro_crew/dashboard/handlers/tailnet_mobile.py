@@ -260,9 +260,9 @@ async def api_tailnet_mobile_status(request: web.Request) -> web.Response:
     # whether the dashboard is currently published, and how many devices share
     # the tailnet — network facts about the operator's machine. Nothing consumes
     # it but the owner's own card, so refusing a non-owner costs nothing and
-    # closes the disclosure that survived making the FRONTEND owner-only. The
-    # renderer no longer needs an `is_owner` field: a refused read yields no
-    # data, and the card already renders nothing without data.
+    # closes the disclosure an owner-only FRONTEND alone leaves open. The
+    # renderer needs no `is_owner` field: a refused read yields no data, and
+    # the card already renders nothing without data.
     if request.get("app") != "" or not is_owner_dashboard_request(request):
         # A DENIED read is audited even though a successful one is not. The
         # docstring for `_audit` says reads are skipped because a polled question
@@ -875,7 +875,7 @@ async def api_tailnet_mobile_qr(request: web.Request) -> web.Response:
         return web.json_response({"error": denied, "code": "governance_denied"}, status=403)
 
     port = _dashboard_port(request)
-    # Unconditional, unlike an earlier revision that nested this in `if port:`.
+    # Unconditional, deliberately not nested in `if port:`.
     # Both server entrypoints set ``app["port"]``, so an unresolved port is not a
     # reachable state today — but this handler's contract is that it refuses
     # unless the dashboard is actually published, and a gate that silently

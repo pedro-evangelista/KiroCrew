@@ -157,8 +157,7 @@ def _resolve_gitdir(git_dir_owner: Path | str) -> Path | None:
         # repoint it at ANOTHER repository's gitdir, and we would then `O_TRUNC` that repo's
         # `info/attributes` (an arbitrary-write primitive). Git makes this backpointer
         # BIDIRECTIONAL: the real gitdir carries a `gitdir` file that points back at THIS
-        # worktree's `.git` file. Validate that round-trip and refuse a mismatch. Raised by the
-        # GPT review.
+        # worktree's `.git` file. Validate that round-trip and refuse a mismatch.
         text = dot_git.read_text(encoding="utf-8").strip()
         if "gitdir:" not in text:
             return None
@@ -191,7 +190,7 @@ def _resolve_gitdir(git_dir_owner: Path | str) -> Path | None:
         # `info/attributes`. For a linked worktree git redirects `info/` to the COMMON
         # gitdir, so a pin in the per-worktree copy leaves the in-tree `.gitattributes`
         # filter/diff drivers BOUND — the exact sandbox escape this module closes.
-        # Return the common gitdir instead. Raised (correctly) by the GPT review.
+        # Return the common gitdir instead.
         return _common_gitdir(gd)
     if dot_git.is_dir():
         return dot_git

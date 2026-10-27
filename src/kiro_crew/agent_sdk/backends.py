@@ -385,10 +385,8 @@ ACP_BACKENDS_INDEPENDENT_SETUP: FrozenSet[str] = frozenset(
 #: session with it: ``acp/client_start.py`` owns the whole spawn path (the ``_is_claude``
 #: branch, ``_resolve_claude_acp_bin``, ``_resolve_claude_code_executable``) and the
 #: adapter it needs is a PUBLIC npm package (``CLAUDE_ACP_NPM_PKG``). Nothing about it
-#: is edition-private. An earlier revision left it out and described it as a "dormant
-#: seam ... not something a public build can serve a session with", which made the
-#: option render as permanently unavailable on exactly the builds that could run it —
-#: the switch was the only missing piece, not the harness.
+#: is edition-private. Leaving it out would render the option as permanently
+#: unavailable on exactly the builds that can run it.
 #:
 #: Whether it is USABLE on a given machine is a separate question with its own answer:
 #: :mod:`kiro_crew.agent_sdk.backend_install` probes for the two binaries and the
@@ -528,14 +526,14 @@ GOVERNANCE_FLOOR_BACKEND: str = ACP_BACKEND_KIRO
 # edition registered. ``_selectable`` is what this DEPLOYMENT may currently select,
 # i.e. the baseline minus whatever the live policy denies.
 #
-# Keeping them apart is what makes the policy re-appliable in BOTH directions. An
-# earlier revision of this module had one set and a destructive
-# ``deny_selectable_backend``: a ceiling installed at runtime
-# (``policy_distribution.apply_ceiling`` replaces ``current_context().governance``
-# mid-process) could then never be re-evaluated, so a TIGHTENED fleet policy stayed
-# inert until every gateway restarted and a LOOSENED one could not restore what the
-# earlier pass had already deleted. Recomputing ``baseline - denied`` has neither
-# failure: it is idempotent, order-independent, and reversible.
+# Keeping them apart is what makes the policy re-appliable in BOTH directions. With
+# one set and a destructive ``deny_selectable_backend``, a ceiling installed at
+# runtime (``policy_distribution.apply_ceiling`` replaces
+# ``current_context().governance`` mid-process) could never be re-evaluated, so a
+# TIGHTENED fleet policy would stay inert until every gateway restarted and a
+# LOOSENED one could not restore what an earlier application had already deleted.
+# Recomputing ``baseline - denied`` has neither failure: it is idempotent,
+# order-independent, and reversible.
 _baseline: Set[str] = set(BASELINE_SELECTABLE_BACKENDS)
 _selectable: Set[str] = set(BASELINE_SELECTABLE_BACKENDS)
 

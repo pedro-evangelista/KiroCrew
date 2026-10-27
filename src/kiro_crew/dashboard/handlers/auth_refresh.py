@@ -888,13 +888,12 @@ async def api_auth_logout(request: web.Request) -> web.Response:
             )
         else:
             # A degraded store makes `validate_refresh_token` fail closed, and skipping the
-            # revocation on that arm revoked the chain neither on disk NOR in memory -- worse
-            # than before this change, where the in-memory revocation at least held for the
-            # life of the process. The endpoint then answered 200, and the next write to
-            # succeed cleared the degraded mark, after which the un-revoked cookie validated
-            # again for the rest of its TTL: exactly the replay this revocation exists to
-            # stop. The HMAC and every claim were verified BEFORE that early return, so the
-            # chain id here is authentic and revoking it cannot be driven by a forged token.
+            # revocation on that arm would revoke the chain neither on disk NOR in memory.
+            # The endpoint would then answer 200, and the next write to succeed would clear
+            # the degraded mark, after which the un-revoked cookie validates again for the
+            # rest of its TTL: exactly the replay this revocation exists to stop. The HMAC
+            # and every claim were verified BEFORE that early return, so the chain id here
+            # is authentic and revoking it cannot be driven by a forged token.
             degraded = _get_state().degraded_reason()
             if degraded and chain_id:
                 revocation_persisted = await asyncio.to_thread(

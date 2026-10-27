@@ -171,9 +171,8 @@ def resolve_remote_url(proj: str, *, remote: str = "", branch: str = "") -> str:
 #: KEY NAME is fixed so ``-c``/``GIT_CONFIG_*`` can pin it back to a safe value.
 #:
 #: The membership criterion is exactly that — "git may exec this value, and the
-#: key is a literal" — and it is written down because the first version of this
-#: list was an enumeration without one and was therefore missing members
-#: (``core.gitProxy``). Adding a key here is correct whenever git might exec it;
+#: key is a literal" — and it is written down because an enumeration without one
+#: misses members (``core.gitProxy``). Adding a key here is correct whenever git might exec it;
 #: the cost of an unnecessary pin is nil, because none of these are values the
 #: update path wants from the repository in the first place.
 #:
