@@ -36,6 +36,7 @@ from kiro_crew.project_scope import (
     scope_is_admissible,
     scope_selector_is_inadmissible,
 )
+from kiro_crew.vector_memory_constants import _contains_injection
 
 try:
     from kiro_crew.config.loader import config_dir as _config_dir
@@ -43,6 +44,12 @@ except ImportError:
     _config_dir = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
+
+
+def lesson_contains_injection(rule: object, negative: object = None) -> bool:
+    """Does the rule or its NOT-clause match the vector store's blocked patterns?"""
+    return any(isinstance(t, str) and _contains_injection(t) for t in (rule, negative))
+
 
 # ── Constants ──
 
@@ -405,6 +412,10 @@ class LessonStore:
         it reports ``unchanged``, matching the vector store for the same case.
         """
         if contains_volatile_lesson_fact(lesson.rule, lesson.negative):
+            return "refused"
+        # The same blocked-content screen the vector store runs in validate_semantic,
+        # so text that store refuses is not stored here instead when it is absent.
+        if lesson_contains_injection(lesson.rule, lesson.negative):
             return "refused"
         with self._lock:
             # A whitespace-only clause is no clause. Same defect as the vector store's:

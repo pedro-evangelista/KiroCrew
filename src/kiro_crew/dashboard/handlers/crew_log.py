@@ -78,6 +78,7 @@ from kiro_crew.dashboard.handlers.crew_log_scope import (
     _target_class_refusal,
     _workspace_refusal,
 )
+from kiro_crew.work_vocab import WORK_FOLD_NAME as _WORK_FOLD
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, never imported at runtime
     from kiro_crew.crew_log.errors import CrewLogError
@@ -116,9 +117,16 @@ FRAME = "session_projection"
 #: run.
 #:
 #: ``{"slot": s, "fold": f, "revision": n, "value": {...}}`` is what an EAGER advance
-#: sends, and it carries the folded value so the client needs no re-read at all. The
-#: client keeps the highest ``revision`` per (slot, fold) and discards anything lower
-#: (:func:`kiro_crew.crew_log.projection.fold_slot_warm_revised` mints it).
+#: of the ``work`` fold sends, and it carries the folded value so the client needs no
+#: re-read at all. The client keeps the highest ``revision`` per (slot, fold) and
+#: discards anything lower (:func:`kiro_crew.crew_log.projection.fold_slot_warm_revised`
+#: mints it).
+#:
+#: Every OTHER slot fold's advance is sent as ``{"slot": s, "fold": f, "revision": n}``
+#: with no value. The browser caches only ``work`` by fold, so for any other fold it
+#: drops the value and re-reads the board either way; a valueless frame takes the
+#: same path (``takeFoldedSlotProjection`` reads it as the growth signal) without
+#: shipping a value per advance per tab that nothing reads.
 #:
 #: One frame kind rather than two, because the client already routes this one to the same
 #: query key the value belongs to, and a second channel would be a second place to keep
@@ -143,6 +151,14 @@ SLOT_SUBSCRIBED_FRAME = "slot_projection/subscribed"
 #: Units whose owning slot is remembered. A unit's header is written once and
 #: never rewritten, so the answer never goes stale; the bound only caps memory.
 MAX_CACHED_SLOT_OWNERS: Final[int] = 512
+
+#: The one slot fold a browser caches, and so the one the exporter subscribes keyed
+#: for a watched board.
+WORK_FOLD: Final[str] = "work"
+
+#: Above this many boards under the watched ones, the exporter falls back to its
+#: wildcard subscription rather than hold a subscription per board.
+MAX_KEYED_SLOT_SUBSCRIPTIONS: Final[int] = 512
 
 #: Distinct refs a single page resolves. Each resolution opens the cited unit and
 #: walks to the span, so the work is bounded per request rather than left to
@@ -835,6 +851,11 @@ class CrewLogPublisher:
         self._pending: "dict[tuple[str, str], tuple[int, int, dict[str, Any]]]" = {}
         self._sessions_armed = False
         self._bus_disposers: "list[Callable[[], None]]" = []
+        # The slot-fold subscriptions, by (key, fold); ``("*", "*")`` is the wildcard.
+        # See :meth:`sync_slot_subscriptions`.
+        self._slot_subs: "dict[tuple[str, str], Callable[[], None]]" = {}
+        self._slot_sub_lock = threading.Lock()
+        self._watch_listener_remove: "Callable[[], None] | None" = None
         self._slot_owners: "OrderedDict[str, str]" = OrderedDict()
         # The newest revision published per (slot, fold), which is what a connecting
         # client is handed as its floor. Written on the fold worker's thread and read on
@@ -895,10 +916,17 @@ class CrewLogPublisher:
 
         for dispose in self._bus_disposers:
             dispose()
+        self._drop_slot_subscriptions()
+        # The slot subscription first, as before: the wildcard one unless every open
+        # owner tab routes by watch set (see :meth:`sync_slot_subscriptions`).
+        self.sync_slot_subscriptions()
+        add_listener = getattr(self._state, "add_fold_watch_listener", None)
+        if callable(add_listener):
+            try:
+                self._watch_listener_remove = add_listener(self.sync_slot_subscriptions)
+            except Exception:  # pragma: no cover - a facade without the hub API
+                logger.debug("fold watch listener could not be added", exc_info=True)
         self._bus_disposers = [
-            crew_log_bus.subscribe(
-                crew_log_bus.FOLD_ADVANCED, self.on_slot_fold, scope=crew_log_bus.SCOPE_SLOT
-            ),
             crew_log_bus.subscribe(
                 crew_log_bus.FOLD_ADVANCED,
                 self.on_session_fold,
@@ -914,6 +942,148 @@ class CrewLogPublisher:
         disposers, self._bus_disposers = self._bus_disposers, []
         for dispose in disposers:
             dispose()
+        self._drop_slot_subscriptions()
+
+    # -- slot subscriptions: wildcard, or keyed by watched board ------------ #
+
+    def _drop_slot_subscriptions(self) -> None:
+        """Remove the slot subscriptions and the watch listener; eager folds every cell."""
+        from kiro_crew.crew_log import bus as crew_log_bus
+
+        remove, self._watch_listener_remove = self._watch_listener_remove, None
+        if remove is not None:
+            remove()
+        with self._slot_sub_lock:
+            subs, self._slot_subs = self._slot_subs, {}
+            crew_log_bus.set_slot_folds_on_demand(False)
+        for dispose in subs.values():
+            dispose()
+
+    def _watched_boards(self) -> "frozenset[str] | None":
+        """The boards to subscribe keyed, or ``None`` for the wildcard subscription.
+
+        ``None`` while any legacy owner socket is open (it receives every board, so
+        every fold must still be rendered), while no capable socket is open (no tab
+        at all is today's case, and stays today's behaviour), and whenever the answer
+        cannot be computed. Otherwise the union of the watch sets plus every board
+        created under a watched one, because a frame for a descendant board is routed
+        to a tab watching its ancestor.
+        """
+        routing = getattr(self._state, "fold_watch_routing", None)
+        if not callable(routing):
+            return None
+        try:
+            legacy, capable, watched = routing()
+        except Exception:
+            logger.debug("fold watch routing could not be read", exc_info=True)
+            return None
+        if legacy or not capable:
+            return None
+        if not watched:
+            return frozenset()
+        try:
+            from kiro_crew.crew_log import session_tree_projection as tree
+
+            if not tree.projection().seeded_for_current_store:
+                # An unseeded tree names no children, which is not the same as having
+                # none: fold everything until it can answer.
+                return None
+            roots = self._fold_cells_for(watched)
+            if roots is None:
+                return None
+            boards: set[str] = set()
+            frontier = list(roots)
+            while frontier:
+                slot = frontier.pop()
+                if slot in boards:
+                    continue
+                boards.add(slot)
+                if len(boards) > MAX_KEYED_SLOT_SUBSCRIPTIONS:
+                    return None
+                frontier.extend(tree.created_children(slot))
+        except Exception:
+            logger.debug("watched boards could not be resolved", exc_info=True)
+            return None
+        return frozenset(boards)
+
+    def _fold_cells_for(self, watched: "frozenset[str]") -> "set[str] | None":
+        """The keys a fold may name each watched board by, or ``None`` if unknown.
+
+        A tab watches by slot key (``chat-7``, ``discord_agent_direct_123``); a fold
+        names its board by session key (``dashboard:chat-7``,
+        ``discord:agent:direct:123``). The channel fold is not reversible, so a live
+        slot's own session key is read; a channel-shaped key no live slot resolves
+        returns ``None`` and the exporter keeps its wildcard subscription.
+        """
+        from kiro_crew.dashboard.chat_utils_slots import effective_session_key
+        from kiro_crew.dashboard.websocket_hub import board_key
+        from kiro_crew.messaging.link import is_channel_session_key
+
+        live: "dict[str, set[str]]" = {}
+        for name, slot in list((getattr(self._state, "_slots", None) or {}).items()):
+            try:
+                session_key = effective_session_key(slot)
+            except Exception:
+                continue
+            live.setdefault(board_key(session_key), set()).update({name, session_key})
+        cells: set[str] = set()
+        for board in watched:
+            resolved = live.get(board, set())
+            if not resolved and is_channel_session_key(board):
+                return None
+            cells.update({board, f"dashboard:{board}", *resolved})
+        return cells
+
+    def sync_slot_subscriptions(self) -> None:
+        """Make this exporter's slot subscriptions match the open tabs. On the loop.
+
+        WILDCARD (``scope=slot``, any key, any fold), exactly the subscription this
+        exporter always held, while :meth:`_watched_boards` says ``None``. Otherwise
+        ONE keyed subscription per watched board for the ``work`` fold, the only slot
+        fold a browser caches, and the bus is told it may let the eager folder skip a
+        cell nobody subscribes to. New subscriptions are added before old ones are
+        removed, so no event falls between the two.
+        """
+        from kiro_crew.crew_log import bus as crew_log_bus
+
+        boards = self._watched_boards()
+        if boards is None:
+            want: "set[tuple[str, str]]" = {("*", "*")}
+        else:
+            want = {(board, WORK_FOLD) for board in boards}
+        with self._slot_sub_lock:
+            have = self._slot_subs
+            added: "dict[tuple[str, str], Callable[[], None]]" = {}
+            for cell in want - have.keys():
+                if cell == ("*", "*"):
+                    added[cell] = crew_log_bus.subscribe(
+                        crew_log_bus.FOLD_ADVANCED,
+                        self.on_slot_fold,
+                        scope=crew_log_bus.SCOPE_SLOT,
+                    )
+                else:
+                    added[cell] = crew_log_bus.subscribe(
+                        crew_log_bus.FOLD_ADVANCED,
+                        self.on_slot_fold,
+                        scope=crew_log_bus.SCOPE_SLOT,
+                        key=cell[0],
+                        fold=cell[1],
+                    )
+            removed = [have[cell] for cell in have.keys() - want]
+            self._slot_subs = {
+                **{cell: d for cell, d in have.items() if cell in want},
+                **added,
+            }
+            # Turned on only once the keyed subscriptions exist, and off before the
+            # wildcard one is the only one left, so no wanted fold is ever skipped.
+            crew_log_bus.set_slot_folds_on_demand(boards is not None)
+        for dispose in removed:
+            dispose()
+
+    def slot_subscription_cells(self) -> "frozenset[tuple[str, str]]":
+        """The (key, fold) cells subscribed, ``("*", "*")`` for the wildcard. For tests."""
+        with self._slot_sub_lock:
+            return frozenset(self._slot_subs)
 
     def on_fold_advanced(self, event: Any) -> None:
         """Route one :class:`FoldAdvanced` to the handler for its scope.
@@ -1016,6 +1186,12 @@ class CrewLogPublisher:
     def _push_tree(self) -> None:
         """Send the slots whose ``parent`` moved. On the loop. Never raises."""
         self._tree_scheduled = False
+        if self._watch_listener_remove is not None:
+            # A board created under a watched one joins the keyed subscriptions.
+            try:
+                self.sync_slot_subscriptions()
+            except Exception:  # pragma: no cover - a resync must not stop the push
+                logger.debug("slot subscription resync failed", exc_info=True)
         push = getattr(self._state, "push_lineage_patch", None)
         if push is None:
             return
@@ -1025,16 +1201,23 @@ class CrewLogPublisher:
             logger.debug("session lineage push failed", exc_info=True)
 
     def _push_fold(self, slot: str, fold: str, revision: int, value: "dict[str, Any]") -> None:
-        """Broadcast one folded slot value. On the loop.
+        """Broadcast one slot fold's advance. On the loop.
+
+        Only the ``work`` fold's frame carries its value: it is the one fold the browser
+        seeds into a cache by fold. Every other slot fold is sent without ``value``,
+        which the browser reads as the growth signal and answers with the same
+        invalidations it runs for a valued frame of that fold (see :data:`SLOT_FRAME`).
+        The bus event itself is untouched, so in-process subscribers still get the
+        whole value.
 
         An empty room is still a broadcast, which costs the hub one membership check and
         keeps this path free of a second liveness rule to keep in step with
         :meth:`_watchers`.
         """
-        self._state.broadcast_ws_owners(
-            SLOT_FRAME,
-            {"slot": slot, "fold": fold, "revision": int(revision), "value": value},
-        )
+        data: dict[str, Any] = {"slot": slot, "fold": fold, "revision": int(revision)}
+        if fold == _WORK_FOLD:
+            data["value"] = value
+        self._state.broadcast_ws_owners(SLOT_FRAME, data)
 
     def _schedule_session(
         self, session_id: str, fold: str, revision: int, seq: int, value: "dict[str, Any]"

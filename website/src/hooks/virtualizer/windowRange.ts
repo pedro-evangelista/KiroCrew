@@ -4,7 +4,7 @@
 // real DOM, with everything else represented by the spacers -- and the rules
 // that move it as the reader scrolls: the scroll-path recompute and its merge,
 // the near/far jump rule behind `mountIndex`, the sentinel expansions, the
-// coverage watchdog and the older-history trigger. Recomputing the window never
+// coverage watchdog, the older-history trigger and the tail-append mount. Recomputing the window never
 // writes `scrollTop`.
 //
 // The placements that move the scroller also mount a window of their own, from
@@ -13,7 +13,7 @@
 // (shiftCompensation.ts), and the entry, visibility and restore windows
 // (readingPosition.ts). The pure window math is in WindowCalculator.ts.
 
-import { useCallback, useEffect, useRef, useState, type MutableRefObject, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MutableRefObject, type RefObject } from 'react'
 import type { HeightIndex } from './HeightIndex'
 import type { RetainedVirtualRange } from './types'
 import {
@@ -28,8 +28,9 @@ import {
   type HeightGetter,
   type WindowRange,
 } from './WindowCalculator'
-import { SCROLL_SETTLE_MS } from './FollowController'
+import { SCROLL_SETTLE_MS, scrollerCollapsed } from './FollowController'
 import type { FollowState, Pinning } from './followPolicy'
+import type { ShiftCapture } from './shiftCompensation'
 
 type Ref<V> = MutableRefObject<V>
 type SetWindowRange = (next: WindowRange | ((prev: WindowRange) => WindowRange)) => void
@@ -152,6 +153,79 @@ export function useWindowState(
   // Live mirror of windowRange for imperative reads (debug probe).
   const windowRangeRef = useRef(windowRange)
   return { windowRange, setWindowRange, windowRangeRef, retainRange, resolveWindowRange }
+}
+
+/**
+ * Mount rows appended at the TAIL under a followed reader in the render that
+ * first sees them.
+ *
+ * The window is recomputed only from a scroll event or a resize, so a row
+ * appended under a reader following the tail -- the prompt they just sent, the
+ * reply that starts under it -- otherwise commits OUTSIDE the window, priced
+ * into the bottom spacer at the running height estimate. The append pin then
+ * carries the reader to the bottom of that estimate, and a frame later the
+ * pin's own scroll event mounts the row at its real height and the bottom
+ * moves back: under long replies a short prompt is estimated hundreds of px
+ * too tall, so every send moved the transcript up and then back down.
+ *
+ * Extending the range here makes React re-run the render before committing,
+ * so the first commit holding the rows renders them as rows and the append
+ * pin lands on their real bottom. Scoped to exactly that case: following a
+ * tail that already holds rows (the first rows of an empty list are the
+ * entry placement's) in a box with a real height, the committed window already
+ * reaching the committed tail, the tail key changed (an append; a prepend
+ * keeps the tail and is the follow owner's bulk-prepend shift or the re-base),
+ * and a growth small enough not to be the hydration replace the follow owner
+ * force-pins on its own (see useFollowPlacementPins). A reader who scrolled up
+ * owns their window, and the row stays off it as before.
+ */
+export function useTailAppendMount<T>(ctx: {
+  items: T[]
+  getKey: (item: T, index: number) => string
+  itemCount: number
+  overscan: number
+  sessionId: string
+  windowRange: WindowRange
+  setWindowRange: SetWindowRange
+  resolveWindowRange: (next: WindowRange) => WindowRange
+  scrollerRef: RefObject<HTMLDivElement | null>
+  shift: Pick<ShiftCapture, 'shiftStageRef'>
+  follow: Pick<FollowState, 'stickRef'>
+}): void {
+  const { items, getKey, itemCount, overscan, sessionId, windowRange, setWindowRange, resolveWindowRange } = ctx
+  const tailKey = itemCount > 0 ? getKey(items[itemCount - 1], itemCount - 1) : null
+  // The committed tail, advanced at COMMIT for the same reason as the shift
+  // capture's mirror: a discarded concurrent attempt must not move it.
+  const committedRef = useRef<{ session: string; count: number; tailKey: string | null } | null>(null)
+  const prev = committedRef.current
+  if (
+    prev !== null &&
+    prev.session === sessionId &&
+    prev.count > 0 &&
+    ctx.follow.stickRef.current &&
+    // Defence in depth: the prepend re-base arms only for a released reader.
+    ctx.shift.shiftStageRef.current !== 'awaiting-rebase' &&
+    itemCount > prev.count &&
+    itemCount - prev.count <= overscan + 1 &&
+    tailKey !== prev.tailKey &&
+    windowRange.end >= prev.count &&
+    windowRange.end < itemCount &&
+    // A collapsed box (backgrounded tab, display:none pane) writes no pin, so
+    // no scroll event ever trims the window's start behind these rows: every
+    // append there would stay mounted. The visibility return re-places it.
+    // Read LAST: it is a layout read, and every streamed token re-renders a
+    // followed transcript without appending a row.
+    ctx.scrollerRef.current !== null && !scrollerCollapsed(ctx.scrollerRef.current)
+  ) {
+    // Compared as the setter commits it (a retained selection widens every
+    // write). The re-run ends on `windowRange.end < itemCount` either way.
+    const target = resolveWindowRange({ start: windowRange.start, end: itemCount })
+    if (windowRange.start !== target.start || windowRange.end !== target.end) setWindowRange(() => target)
+  }
+  const next = { session: sessionId, count: itemCount, tailKey }
+  useLayoutEffect(() => {
+    committedRef.current = next
+  })
 }
 
 export interface WindowOperations {

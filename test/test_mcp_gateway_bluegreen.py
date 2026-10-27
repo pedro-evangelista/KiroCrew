@@ -188,7 +188,6 @@ async def test_idle_backends_still_evicted_as_before() -> None:
     pool = BackendPool(max_backends=10)
     key = _make_pool_key()
     backend = _make_mock_backend(key, refcount=0)
-    # Make it look old
     backend.last_used_at = time.monotonic() - 1000
     await pool.add(key, backend)
 

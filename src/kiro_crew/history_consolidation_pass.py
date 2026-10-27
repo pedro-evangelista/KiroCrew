@@ -43,12 +43,13 @@ import time as _time
 from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any
 
-from kiro_crew.executors import run_in_embed_pool
+from kiro_crew.executors import run_in_embed_pool  # noqa: F401 - facade re-export
 from kiro_crew.history_consolidation_memory import (
     _SEMANTIC_OMISSION_NOTICE,
     _bounded_semantic_table,
     _is_plausible_memory_file,
     _reroute_lesson_semantic_keys,
+    _semantic_snapshot_in_pages,
     _session_facets,
     _withhold_unseen_deletes,
 )
@@ -107,6 +108,10 @@ async def _consolidate(
     one instance. A changed source remains pending rather than consuming
     the failure/abandon budget of a different span.
     """
+    # Every store pass below runs on the background memory pool (mc-membg), so a
+    # backlog of consolidations never holds an mc-embed worker a turn needs.
+    from kiro_crew.executors import run_in_memory_background_pool as _run_in_memory_background_pool
+
     # Capture the gateway loop so the thread-offloaded _process_auto_skills
     # can schedule the async dedupe judge back onto it.
     self._event_loop = asyncio.get_running_loop()
@@ -335,7 +340,7 @@ async def _consolidate(
             # retires an unprocessable span: advance the marker past the
             # whole chunk, log the reason, and fire the user-facing abandon
             # notice — never silently (silently marking unread content
-            # consolidated is the very bug this PR fixes). A head whose
+            # consolidated loses it for good). A head whose
             # remainder fits one more slice is NOT retired; it drains in full,
             # so no span that would fit a single extra slice is dropped
             # unread. The already-sliced prefix keeps whatever it extracted;
@@ -593,11 +598,11 @@ async def _consolidate(
         has_vector = vector_store is not None
         if has_vector and vector_store is not None:
             private_policy = getattr(vector_store, "algorithm_version", "v1") == "v2"
-            # Offload: the fetch serializes on the store's _db_lock,
+            # Offload: each page of the fetch serializes on the store's _db_lock,
             # and this coroutine runs on the gateway event loop — a worker
             # holding the lock (backfill's FAISS rebuild, reconcile's bulk
             # UPDATEs) would otherwise block the whole loop here.
-            current_semantic = await asyncio.to_thread(vector_store.get_all_semantic)
+            current_semantic = await asyncio.to_thread(_semantic_snapshot_in_pages, vector_store)
 
             def _prompt_value(e: dict) -> object:
                 # A lesson row stores a mapping; the consolidation model
@@ -614,7 +619,7 @@ async def _consolidate(
                 return e["value_json"]
 
             if private_policy:
-                current_semantic = await run_in_embed_pool(
+                current_semantic = await _run_in_memory_background_pool(
                     vector_store.with_record_metadata, current_semantic
                 )
             semantic_entries = [
@@ -921,7 +926,7 @@ async def _consolidate(
                     publication.mark_committed()
                     return applied
 
-            await run_in_embed_pool(_apply_member_consolidation)
+            await _run_in_memory_background_pool(_apply_member_consolidation)
 
         if not member_memory and (entry := result.get("history_entry")):
             stage = "history entry"
@@ -936,7 +941,7 @@ async def _consolidate(
                     memory.append_history(entry)
                     publication.mark_committed()
 
-            await run_in_embed_pool(_append_history_under_hold)
+            await _run_in_memory_background_pool(_append_history_under_hold)
             self._logger.info(
                 "Consolidated %d of %d unconsolidated messages for %s",
                 len(chunk),
@@ -951,7 +956,7 @@ async def _consolidate(
         # if the embedding endpoint is slow/hung (heartbeats, Slack, dashboard).
         if vector_store and not member_memory:
             stage = "structured memory"
-            await run_in_embed_pool(
+            await _run_in_memory_background_pool(
                 self._write_structured_memory,
                 result,
                 key,
@@ -993,7 +998,7 @@ async def _consolidate(
                                 publication.mark_committed()
                             return wrote
 
-                    wrote = await run_in_embed_pool(_write_preferences)
+                    wrote = await _run_in_memory_background_pool(_write_preferences)
                     if not wrote:
                         self._logger.info(
                             "Consolidated preferences for %s discarded: file "
@@ -1021,7 +1026,7 @@ async def _consolidate(
                                 publication.mark_committed()
                             return wrote
 
-                    wrote = await run_in_embed_pool(_write_projects)
+                    wrote = await _run_in_memory_background_pool(_write_projects)
                     if not wrote:
                         self._logger.info(
                             "Consolidated projects for %s discarded: file "
@@ -1039,7 +1044,7 @@ async def _consolidate(
             and (raw_lessons := result.get("lessons"))
         ):
             stage = "lessons"
-            await run_in_embed_pool(
+            await _run_in_memory_background_pool(
                 self._save_lessons,
                 raw_lessons,
                 vector_store,

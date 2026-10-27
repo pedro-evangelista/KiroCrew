@@ -173,6 +173,58 @@ describe('QueueStack inline edit', () => {
     expect(onEdit).toHaveBeenCalledWith('q1', 'new text')
   })
 
+  it('retires the live edit draft on commit', () => {
+    const onEditDraft = vi.fn()
+    render(<QueueStack messages={[queued('old text', 'q1')]} onEdit={vi.fn()} onEditDraft={onEditDraft} />)
+    const input = openEditor()
+    fireEvent.change(input, { target: { value: 'new text' } })
+    expect(onEditDraft).toHaveBeenLastCalledWith('q1', 'new text')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(onEditDraft).toHaveBeenLastCalledWith('q1', undefined)
+  })
+
+  it('retires the live edit draft on cancel', () => {
+    const onEditDraft = vi.fn()
+    render(<QueueStack messages={[queued('old text', 'q1')]} onEdit={vi.fn()} onEditDraft={onEditDraft} />)
+    const input = openEditor()
+    fireEvent.change(input, { target: { value: 'discarded text' } })
+    expect(onEditDraft).toHaveBeenLastCalledWith('q1', 'discarded text')
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(onEditDraft).toHaveBeenLastCalledWith('q1', undefined)
+  })
+
+  it('retires the live edit draft when the editor unmounts', () => {
+    const onEditDraft = vi.fn()
+    const view = render(<QueueStack messages={[queued('old text', 'q1')]} onEdit={vi.fn()} onEditDraft={onEditDraft} />)
+    const input = openEditor()
+    fireEvent.change(input, { target: { value: 'abandoned text' } })
+    expect(onEditDraft).toHaveBeenLastCalledWith('q1', 'abandoned text')
+    view.unmount()
+    expect(onEditDraft).toHaveBeenLastCalledWith('q1', undefined)
+  })
+
+  it('reports no live edit draft while the typed words are blank, though the card carries knowledge or a quote', () => {
+    const kb = { totalTokens: 7, items: [{ id: 'k1', title: 'Doc', content: 'kb line one', tokens: 7 }] } as unknown as KnowledgeBlock
+    const quote = { role: 'assistant' as const, text: 'the quoted reply', ts: 't0' }
+    const cards: ChatMessage[] = [
+      queued(buildOutgoingTurn({ text: 'summarize the doc', knowledge: kb }, 'send').wire, 'q1'),
+      { role: 'queued', content: `${quoteBlock(quote)}\n\nwhy though?`, cls: '', ts: 't', meta: { queueId: 'q1', quote } } as ChatMessage,
+    ]
+    for (const card of cards) {
+      const onEditDraft = vi.fn()
+      const view = render(<QueueStack messages={[card]} onEdit={vi.fn()} onEditDraft={onEditDraft} />)
+      const input = openEditor()
+      fireEvent.change(input, { target: { value: '  ' } })
+      expect(onEditDraft).toHaveBeenLastCalledWith('q1', undefined)
+      fireEvent.change(input, { target: { value: 'new words' } })
+      const reglued = card.meta?.quote
+        ? `${quoteBlock(quote)}\n\nnew words`
+        : buildOutgoingTurn({ text: 'new words', knowledge: kb }, 'send').wire
+      expect(onEditDraft).toHaveBeenLastCalledWith('q1', reglued)
+      view.unmount()
+    }
+  })
+
   it('does NOT fire onEdit when the text is unchanged and the input blurs (no-op edit)', () => {
     const onEdit = vi.fn()
     render(<QueueStack messages={[queued('same text', 'q1')]} onEdit={onEdit} />)

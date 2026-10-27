@@ -100,6 +100,16 @@ class MemoryConfig:
             "a few seconds. 0 keeps the model loaded.",
         ),
     )
+    embedding_child_process: bool = field(
+        default=False,
+        metadata=_meta(
+            "Run Embeddings in a Child Process",
+            "Load the embedding model and run inference in a separate low-priority "
+            "process, so embedding work never competes with the gateway itself. Off "
+            "by default: the model runs inside the gateway. Takes effect at the next "
+            "model load.",
+        ),
+    )
     embed_model_url: str = field(
         default="",
         metadata=_meta(

@@ -1012,6 +1012,26 @@ def dashboard_user_ws_count(self: DashboardState) -> int:
     return _websocket_for(self).dashboard_user_ws_count()
 
 
+def set_fold_delta_capable(self: DashboardState, ws: web.WebSocketResponse, capable: bool) -> bool:
+    return _websocket_for(self).set_fold_delta_capable(ws, capable)
+
+
+def set_fold_watch(
+    self: DashboardState, ws: web.WebSocketResponse, slots: object
+) -> frozenset[str]:
+    return _websocket_for(self).set_fold_watch(ws, slots)
+
+
+def fold_watch_routing(self: DashboardState) -> tuple[bool, bool, frozenset[str]]:
+    return _websocket_for(self).fold_watch_routing()
+
+
+def add_fold_watch_listener(
+    self: DashboardState, listener: Callable[[], None]
+) -> Callable[[], None]:
+    return _websocket_for(self).add_fold_watch_listener(listener)
+
+
 def broadcast_browser_event(self: DashboardState, event_type: str, data: dict) -> None:
     _websocket_for(self).broadcast_browser_event(event_type, data)
 

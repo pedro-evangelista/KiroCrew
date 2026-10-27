@@ -133,10 +133,14 @@ def rebuild_from_projection(slot_key: str) -> dict[str, Any]:
                 "(any slot's), then rebuild",
                 code=CODE_CREW_LOG_INCOMPLETE,
             )
-        # Workers the record's own bind entries may not name (bound before the
-        # board was recorded) join the fold from two more places: the cached binding
-        # files, and every other slot whose log carries an entry naming this board
-        # -- the one source that survives losing the cache and the bindings both.
+        # The board's own units are the record. The rebuild ALSO joins every worker the
+        # board can name (cached bindings, and every other slot whose log carries an
+        # entry naming this board), because a report made before reports were written
+        # into the conductor's log exists only in the worker's: without the join a
+        # rebuild would overwrite those committed reports with blanks. A report made
+        # since is in both logs and folds once, because the fold drops an item event
+        # it already holds (same event id). This is the operator's rebuild, not a read
+        # path; every read and eager advance folds the board's own units alone.
         extra_slots = list(_bound_workers(slot_key))
         for other in work_slots_naming_board(slot_key):
             if other not in extra_slots:
@@ -150,7 +154,9 @@ def rebuild_from_projection(slot_key: str) -> dict[str, Any]:
         # Every file this rebuild may touch is snapshotted first; a failure part
         # way through puts all of them back, so the cache is never left half
         # rewritten: it is the old board or the rebuilt one, nothing between.
-        fold_items = [raw for raw in (folded.get("items") or ()) if isinstance(raw, dict)]
+        fold_items = [
+            _stored_view(raw) for raw in (folded.get("items") or ()) if isinstance(raw, dict)
+        ]
         omitted = folded.get("omitted")
         if len(fold_items) >= WORK_ITEM_LIMIT and (not isinstance(omitted, int) or omitted > 0):
             # The fold HOLDS at most ``WORK_ITEM_LIMIT`` items at once and counts
@@ -206,6 +212,20 @@ def rebuild_from_projection(slot_key: str) -> dict[str, Any]:
             raise
         clear_cache_dirty(slot_key)
         return counts
+
+
+def _stored_view(item: dict[str, Any]) -> dict[str, Any]:
+    """A folded item as the cache stores it: without the fold's render-only summary.
+
+    An open bound item with no report in the board's log renders
+    ``WORK_AWAITING_REPORT`` as its summary for readers of the fold. That text is the
+    fold's, never the worker's, so the cache keeps an empty summary instead.
+    """
+    from kiro_crew.crew_log.projection import WORK_AWAITING_REPORT
+
+    if item.get("status") is None and item.get("summary") == WORK_AWAITING_REPORT:
+        return {**item, "summary": ""}
+    return item
 
 
 class _Forgotten(NamedTuple):
@@ -1086,6 +1106,7 @@ from kiro_crew.work_ledger_records import (  # noqa: E402, F401
     logger,
 )
 from kiro_crew.work_ledger_rules import (  # noqa: E402, F401
+    _WARNED_DEPTH_FALLBACKS,
     _decided_after_report,
     _is_placeholder,
     _parse_iso,
@@ -1095,12 +1116,15 @@ from kiro_crew.work_ledger_rules import (  # noqa: E402, F401
     _require_count,
     _require_pr,
     _require_text,
+    _warn_depth_fallback,
     _worker_owns_next_move,
     child_depth,
+    depth_cap_hint,
     is_acceptance_concrete,
     is_orphaned,
     is_pending_overdue,
     is_stale,
+    max_depth,
     may_conduct,
     parse_stamp,
 )
@@ -1221,6 +1245,10 @@ if TYPE_CHECKING:  # the project names this module imported that only its owners
     from kiro_crew.work_vocab import (  # noqa: F401
         WORK_BLOCKED_REASONS,
         WORK_ITEM_STATES,
+        WORK_MAX_DEPTH_DEFAULT,
+        WORK_MAX_DEPTH_MAX,
+        WORK_MAX_DEPTH_MIN,
+        WORK_MAX_DEPTH_SETTING,
         WORK_REASON_STATUSES,
         WORK_STORED_ITEM_LIMIT,
         WORK_VERDICTS,

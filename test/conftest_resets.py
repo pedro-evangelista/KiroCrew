@@ -599,6 +599,21 @@ def _no_boot_sandbox_sweep(_floor_monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_boot_heap_freeze(_floor_monkeypatch):
+    """A test that drives the gateway's ``run()`` must not freeze this worker's heap.
+
+    ``run()`` calls ``gc.freeze()`` once its socket is bound, which moves every
+    object the worker holds into the permanent generation for the rest of the
+    process: cyclic garbage alive at that moment is never collected, in whichever
+    test runs next. A test of the freeze itself patches the same name inside its
+    body (``TestRunFreezesBootHeap``) and so overrides this.
+    """
+    import gc
+
+    _floor_monkeypatch.setattr(gc, "freeze", lambda: None)
+
+
+@pytest.fixture(autouse=True)
 def _ensure_event_loop():
     """Ensure a USABLE (open) event loop exists for tests that call
     ``asyncio.get_event_loop().run_until_complete(...)`` (e.g. test_knowledge).

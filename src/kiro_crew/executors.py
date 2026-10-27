@@ -94,6 +94,7 @@ __all__ = [
     "cron_executor",
     "discovery_executor",
     "embed_executor",
+    "memory_background_executor",
     "image_executor",
     "stt_executor",
     "path_resolve_executor",
@@ -111,6 +112,7 @@ __all__ = [
     "run_in_cron_gate_pool",
     "cron_gate_budget",
     "run_in_embed_pool",
+    "run_in_memory_background_pool",
     "run_with_recall_deadline",
     "recall_executor",
     "shutdown_maintenance_executor",
@@ -189,6 +191,19 @@ _MAX_STATIC_ASSET_WORKERS = 4
 # run_in_embed_pool admits work before submission, so a burst waits as cancellable
 # coroutines instead of growing ThreadPoolExecutor's unbounded work-item queue.
 _MAX_EMBED_WORKERS = 8
+
+# History consolidation and the embedding backfill are background memory work: a
+# consolidation pass can sit minutes on the memory database, and a backfill walks
+# the whole store. On the shared mc-embed pool five consolidations and a backfill
+# filled seven of its eight workers and left turn context (build_message) queued
+# behind them. They get this small pool of their own, so at worst they wait for
+# each other and mc-embed keeps its workers for interactive work.
+# Consolidation is admitted at most this many at a time.
+_MAX_MEMORY_BACKGROUND_WORKERS = 2
+# The gateway's embedding backfill (hours, paced) and member repair loop hold a
+# thread each through ``run_in_executor`` without admission; these extra threads
+# are theirs, so consolidation keeps its two workers while they run.
+_MEMORY_BACKGROUND_LOOP_THREADS = 2
 
 # Governance checks for EXTERNALLY-triggered surfaces: the per-inbound-message
 # channels gate (every Slack/Discord/Telegram/Webex/WeCom message + approval
@@ -424,6 +439,7 @@ _cron_pool: ThreadPoolExecutor | None = None
 _discovery_pool: ThreadPoolExecutor | None = None
 _static_asset_pool: ThreadPoolExecutor | None = None
 _embed_pool: ThreadPoolExecutor | None = None
+_memory_background_pool: ThreadPoolExecutor | None = None
 _recall_pool: ThreadPoolExecutor | None = None
 _image_pool: ThreadPoolExecutor | None = None
 _stt_pool: ThreadPoolExecutor | None = None
@@ -810,6 +826,24 @@ def embed_executor() -> ThreadPoolExecutor:
                 )
                 atexit.register(shutdown_maintenance_executor)
     return _embed_pool
+
+
+def memory_background_executor() -> ThreadPoolExecutor:
+    """Return the background memory pool (consolidation, backfill), creating it once.
+
+    Threads are named ``mc-membg``. See :data:`_MAX_MEMORY_BACKGROUND_WORKERS` and
+    :data:`_MEMORY_BACKGROUND_LOOP_THREADS`.
+    """
+    global _memory_background_pool
+    if _memory_background_pool is None:
+        with _lock:
+            if _memory_background_pool is None:
+                _memory_background_pool = ThreadPoolExecutor(
+                    max_workers=_MAX_MEMORY_BACKGROUND_WORKERS + _MEMORY_BACKGROUND_LOOP_THREADS,
+                    thread_name_prefix="mc-membg",
+                )
+                atexit.register(shutdown_maintenance_executor)
+    return _memory_background_pool
 
 
 def governance_executor() -> ThreadPoolExecutor:
@@ -1247,17 +1281,52 @@ async def run_in_embed_pool(func: Callable[..., _T], /, *args: Any, **kwargs: An
 
     from kiro_crew.embeddings import embedding_work
 
-    loop = asyncio.get_running_loop()
     recall = embedding_work.get() is not None
-    admission_key = "_kirocrew_recall_admission" if recall else "_kirocrew_memory_admission"
+    return await _run_admitted(
+        recall_executor if recall else embed_executor,
+        "_kirocrew_recall_admission" if recall else "_kirocrew_memory_admission",
+        _MAX_EMBED_WORKERS,
+        copy_context(),
+        functools.partial(func, *args, **kwargs),
+    )
+
+
+async def run_in_memory_background_pool(
+    func: Callable[..., _T], /, *args: Any, **kwargs: Any
+) -> _T:
+    """Offload background memory work (consolidation, backfill) to ``mc-membg``.
+
+    Same admission shape as :func:`run_in_embed_pool`, with a budget of its own,
+    so a backlog of background passes waits among itself and never holds an
+    ``mc-embed`` worker that turn context needs.
+    """
+    from contextvars import copy_context
+
+    return await _run_admitted(
+        memory_background_executor,
+        "_kirocrew_memory_background_admission",
+        _MAX_MEMORY_BACKGROUND_WORKERS,
+        copy_context(),
+        functools.partial(func, *args, **kwargs),
+    )
+
+
+async def _run_admitted(
+    executor_of: Callable[[], ThreadPoolExecutor],
+    admission_key: str,
+    workers: int,
+    context: Any,
+    call: Callable[[], _T],
+) -> _T:
+    """Submit *call* once this loop's per-pool admission has a free slot."""
+    loop = asyncio.get_running_loop()
     admission = getattr(loop, admission_key, None)
     if admission is None:
-        admission = asyncio.Semaphore(_MAX_EMBED_WORKERS)
+        admission = asyncio.Semaphore(workers)
         setattr(loop, admission_key, admission)
     await admission.acquire()
     try:
-        executor = recall_executor() if recall else embed_executor()
-        future = executor.submit(copy_context().run, functools.partial(func, *args, **kwargs))
+        future = executor_of().submit(context.run, call)
     except BaseException:
         admission.release()
         raise
@@ -1280,6 +1349,7 @@ def shutdown_maintenance_executor() -> None:
     loop and shut down by asyncio when the loop closes.
     """
     global _pool, _subprocess_pool, _cron_pool, _discovery_pool, _embed_pool, _recall_pool
+    global _memory_background_pool
     global _static_asset_pool
     global _governance_pool, _image_pool, _cron_gate_pool, _tool_gate_pool, _stt_pool
     global _path_resolve_pool
@@ -1294,6 +1364,7 @@ def shutdown_maintenance_executor() -> None:
         discovery_pool, _discovery_pool = _discovery_pool, None
         static_asset_pool, _static_asset_pool = _static_asset_pool, None
         embed_pool, _embed_pool = _embed_pool, None
+        memory_background_pool, _memory_background_pool = _memory_background_pool, None
         recall_pool, _recall_pool = _recall_pool, None
         governance_pool, _governance_pool = _governance_pool, None
         image_pool, _image_pool = _image_pool, None
@@ -1321,6 +1392,8 @@ def shutdown_maintenance_executor() -> None:
         static_asset_pool.shutdown(wait=False, cancel_futures=True)
     if embed_pool is not None:
         embed_pool.shutdown(wait=False, cancel_futures=True)
+    if memory_background_pool is not None:
+        memory_background_pool.shutdown(wait=False, cancel_futures=True)
     if recall_pool is not None:
         recall_pool.shutdown(wait=False, cancel_futures=True)
     if governance_pool is not None:

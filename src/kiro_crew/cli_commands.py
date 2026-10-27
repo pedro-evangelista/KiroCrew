@@ -293,9 +293,9 @@ def _tailnet(args: argparse.Namespace) -> None:
     # therefore silently rewritten — by the mere act of reading it. That makes even
     # ``status`` a write, which is indefensible for a command that reports state.
     #
-    # An earlier revision guarded only ``up``, reasoning that refusing to *report* or
-    # to *withdraw* over a malformed config would be the worse failure. That reasoning
-    # had a hole: both paths need the dashboard port, which resolves through
+    # Guarding only ``up``, on the theory that refusing to *report* or to *withdraw*
+    # over a malformed config would be the worse failure, does not work: both paths
+    # need the dashboard port, which resolves through
     # ``resolve_client_port`` → ``KiroCrewConfig.load()``, so there is no version of
     # them that reads the file without rewriting it. Given the choice between
     # rewriting the operator's config and declining, declining wins — and withdrawal

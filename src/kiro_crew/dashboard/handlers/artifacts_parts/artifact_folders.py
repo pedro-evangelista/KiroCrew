@@ -403,10 +403,9 @@ async def api_artifact_folder_delete(request: web.Request) -> web.Response:
     subtree_generations: dict[str, str] = {}
     if delete_contents:
         # The cascade destroys artifacts through `ArtifactStore.delete`, which knows
-        # nothing about publications -- so before this fix a cascade over a folder holding
-        # a published artifact erased the record while the public copy stayed served, with
-        # nothing left able to withdraw it. Exactly the single-delete defect, reached by a
-        # different door, and it has to obey the same rule.
+        # nothing about publications -- so an unguarded cascade over a folder holding a
+        # published artifact would erase the record while the public copy stayed served,
+        # with nothing left able to withdraw it. It obeys the single-delete rule.
         #
         # Withdraw first, destroy nothing until every published copy in the subtree is
         # withdrawn. On the first copy that will NOT come down the whole cascade is

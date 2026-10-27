@@ -536,7 +536,6 @@ async def api_file_diff(request: web.Request) -> web.Response:
                 env=_env,
             )
             original = head.stdout if head.returncode == 0 else ""
-            # Get diff
             r = subprocess.run(
                 [*_git, "diff", "--no-textconv", "--no-ext-diff", "HEAD", "--", raw_path],
                 cwd=dirpath,

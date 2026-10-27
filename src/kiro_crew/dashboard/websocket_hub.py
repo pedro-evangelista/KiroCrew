@@ -21,6 +21,69 @@ SLOT_PATCH_CAPABILITY = "slot_patch"
 #: carries it; every other socket keeps receiving the full ``slots`` list.
 SLOT_PATCH_WS_FLAG = "_slot_patch"
 
+#: Capability a dashboard tab declares in ``?caps=`` when its bundle sends
+#: ``fold_watch`` and can live with slot-fold frames for only the boards it watches.
+FOLD_DELTA_CAPABILITY = "fold_delta.1"
+
+#: Socket attribute recording that declaration (set through
+#: :meth:`WebSocketHub.set_fold_delta_capable`). A socket without it is LEGACY: it
+#: receives every board's ``slot_projection`` frames, exactly as before.
+FOLD_DELTA_WS_FLAG = "_fold_delta"
+
+#: Socket attribute holding the boards a capable tab watches, a ``frozenset``.
+FOLD_WATCH_WS_KEY = "_fold_watch"
+
+#: The frame type whose fan-out the watch sets route. Same string as
+#: ``dashboard.handlers.crew_log.SLOT_FRAME``, spelled here so the hub imports no
+#: handler module.
+SLOT_FOLD_FRAME = "slot_projection"
+
+#: The frame a capable socket is answered with right after connect, so the tab knows
+#: the gateway routes by watch set. Sent by the socket handler, not by the hub.
+FOLD_HELLO_FRAME = "fold_hello"
+
+#: The most boards one socket may watch, and the longest key accepted. A tab shows a
+#: handful; the caps bound what a misbehaving client can make the hub hold.
+MAX_FOLD_WATCH_SLOTS = 64
+MAX_FOLD_WATCH_KEY_LEN = 256
+
+#: How many creator hops an ancestor walk takes before it stops, so a creation
+#: cycle in the tree cannot loop.
+_MAX_ANCESTOR_DEPTH = 32
+
+
+def fold_hello_payload() -> dict[str, Any]:
+    """The ``data`` of :data:`FOLD_HELLO_FRAME`: schema version and routed folds."""
+    return {"v": 1, "folds": ["work"]}
+
+
+def board_key(slot: str) -> str:
+    """*slot* in the form a dashboard tab names its board by.
+
+    A fold names its board by session key (``dashboard:chat-7``,
+    ``discord:agent:direct:123``) while a tab names it by slot key (``chat-7``,
+    ``discord_agent_direct_123``), the fold the browser's ``slotKey`` applies. Both
+    sides of a watch match go through this so the two spellings meet. The same rule
+    the artifact store uses to reconcile the two (``_strip_session_scope``).
+    """
+    try:
+        from kiro_crew.artifact_store.rules import _strip_session_scope
+
+        return _strip_session_scope(slot)
+    except Exception:
+        return slot
+
+
+def _default_slot_creator(slot: str) -> str:
+    """The slot that created *slot*, from the crew log's session tree. No I/O."""
+    try:
+        from kiro_crew.crew_log import session_tree_projection
+
+        return str(session_tree_projection.creator_of(slot) or "")
+    except Exception:
+        return ""
+
+
 #: Unsent bytes above which the hub checks whether a tab still reads. A fan-out
 #: send writes its whole frame into the transport before it waits on drain, and
 #: each send is its own task, so a burst can take a tab that still reads past
@@ -108,6 +171,7 @@ class WebSocketHub:
         logger_provider: Callable[[], logging.Logger],
         scope_state_provider: Callable[[], Any] | None = None,
         running_loop_provider: Callable[[], asyncio.AbstractEventLoop | None] | None = None,
+        slot_creator_provider: Callable[[str], str] | None = None,
     ) -> None:
         self._owner = owner
         self._serving_loop_provider = serving_loop_provider
@@ -116,6 +180,11 @@ class WebSocketHub:
             scope_state_provider if scope_state_provider is not None else lambda: owner
         )
         self._running_loop_provider = running_loop_provider or self._running_loop
+        self._slot_creator: Callable[[str], str] = slot_creator_provider or _default_slot_creator
+        # Called with no argument whenever which owner sockets are capable, or what
+        # they watch, may have changed. The crew-log exporter re-derives its bus
+        # subscriptions from :meth:`fold_watch_routing` there.
+        self._fold_watch_listeners: list[Callable[[], None]] = []
 
     @property
     def _log(self) -> logging.Logger:
@@ -611,8 +680,164 @@ class WebSocketHub:
         if not getattr(self._owner, "_owner_ws_clients", None):
             return
         msg = json.dumps({"type": msg_type, "data": data})
+        if msg_type == SLOT_FOLD_FRAME and self._any_fold_capable():
+            slot = data.get("slot")
+            if isinstance(slot, str) and slot:
+                self._send_slot_fold(msg, slot)
+                return
         send_owners = self._owner_method("_send_ws_owners", self._send_ws_owners)
         send_owners(msg)
+
+    # -- per-tab fold watch ------------------------------------------------- #
+
+    def _any_fold_capable(self) -> bool:
+        """Whether any open owner socket declared :data:`FOLD_DELTA_CAPABILITY`."""
+        return any(
+            not ws.closed and ws.get(FOLD_DELTA_WS_FLAG, False)
+            for ws in list(self._owner._owner_ws_clients)
+        )
+
+    def _send_slot_fold(self, msg: str, slot: str) -> None:
+        """Send one board's slot frame: every legacy owner socket, and each capable
+        one that watches *slot* or one of its ancestors."""
+        dead: list[web.WebSocketResponse] = []
+        spawn = self._owner_method("_spawn_ws_send", self._spawn_ws_send)
+        remove = self._owner_method("_remove_ws", self._remove_ws)
+        chain: frozenset[str] | None = None
+        for ws in list(self._owner._owner_ws_clients):
+            if ws.closed:
+                dead.append(ws)
+                continue
+            if ws.get(FOLD_DELTA_WS_FLAG, False):
+                watched = ws.get(FOLD_WATCH_WS_KEY) or frozenset()
+                if not watched:
+                    continue
+                if chain is None:
+                    chain = self.board_chain(slot)
+                if watched.isdisjoint(chain):
+                    continue
+            try:
+                spawn(ws, msg)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            remove(ws)
+
+    def board_chain(self, slot: str) -> frozenset[str]:
+        """:meth:`slot_ancestry` of *slot*, each in its :func:`board_key` form.
+
+        Both spellings of every slot, so a creator recorded under either one still
+        matches a watch set that holds board keys.
+        """
+        chain: set[str] = set()
+        for name in self.slot_ancestry(slot):
+            chain.add(name)
+            chain.add(board_key(name))
+        return frozenset(chain)
+
+    def slot_ancestry(self, slot: str) -> list[str]:
+        """*slot* followed by each slot that created the one before it, root last."""
+        chain: list[str] = []
+        current = slot
+        while current and current not in chain and len(chain) <= _MAX_ANCESTOR_DEPTH:
+            chain.append(current)
+            try:
+                current = self._slot_creator(current)
+            except Exception:
+                break
+        return chain
+
+    def add_fold_watch_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
+        """Call *listener* whenever fold routing may have changed; returns a remover."""
+        self._fold_watch_listeners.append(listener)
+
+        def remove() -> None:
+            try:
+                self._fold_watch_listeners.remove(listener)
+            except ValueError:
+                pass
+
+        return remove
+
+    def _fold_watch_changed(self) -> None:
+        for listener in list(self._fold_watch_listeners):
+            try:
+                listener()
+            except Exception:
+                self._log.debug("fold watch listener failed", exc_info=True)
+
+    def set_fold_delta_capable(self, ws: web.WebSocketResponse, capable: bool) -> bool:
+        """Record whether *ws* declared :data:`FOLD_DELTA_CAPABILITY`; returns the flag.
+
+        Only a dashboard-user socket can carry it, like ``slot_patch``. A socket that
+        turns capable starts with an empty watch set, so it receives no slot frame
+        until its tab sends ``fold_watch``.
+        """
+        flag = bool(capable) and bool(ws.get("_is_dashboard_user", False))
+        ws[FOLD_DELTA_WS_FLAG] = flag
+        ws[FOLD_WATCH_WS_KEY] = frozenset()
+        self._fold_watch_changed()
+        return flag
+
+    def set_fold_watch(self, ws: web.WebSocketResponse, slots: object) -> frozenset[str]:
+        """REPLACE *ws*'s watch set with *slots*; returns what was kept.
+
+        Entries that are not a non-empty string of at most
+        :data:`MAX_FOLD_WATCH_KEY_LEN` characters are ignored, as is everything past
+        :data:`MAX_FOLD_WATCH_SLOTS`. A slot nobody publishes is harmless: it matches
+        no frame. A socket without the capability keeps no watch set at all, since it
+        receives every board anyway.
+        """
+        if not ws.get(FOLD_DELTA_WS_FLAG, False):
+            return frozenset()
+        kept: list[str] = []
+        if isinstance(slots, (list, tuple)):
+            for slot in slots:
+                if len(kept) >= MAX_FOLD_WATCH_SLOTS:
+                    break
+                if (
+                    isinstance(slot, str)
+                    and slot
+                    and len(slot) <= MAX_FOLD_WATCH_KEY_LEN
+                    and slot.isprintable()
+                    and board_key(slot) not in kept
+                ):
+                    kept.append(board_key(slot))
+        watched = frozenset(kept)
+        if ws.get(FOLD_WATCH_WS_KEY) != watched:
+            ws[FOLD_WATCH_WS_KEY] = watched
+            self._fold_watch_changed()
+        return watched
+
+    def fold_watchers(self, slot: str) -> list[web.WebSocketResponse]:
+        """The capable owner sockets that watch *slot* or one of its ancestors."""
+        chain = self.board_chain(slot)
+        return [
+            ws
+            for ws in list(self._owner._owner_ws_clients)
+            if not ws.closed
+            and ws.get(FOLD_DELTA_WS_FLAG, False)
+            and not (ws.get(FOLD_WATCH_WS_KEY) or frozenset()).isdisjoint(chain)
+        ]
+
+    def fold_watch_routing(self) -> tuple[bool, bool, frozenset[str]]:
+        """``(legacy_open, capable_open, watched)`` over the open owner sockets.
+
+        *watched* is the union of every capable socket's watch set. The exporter
+        keeps its wildcard bus subscription unless a capable socket is open and no
+        legacy one is.
+        """
+        legacy = capable = False
+        watched: set[str] = set()
+        for ws in list(self._owner._owner_ws_clients):
+            if ws.closed:
+                continue
+            if ws.get(FOLD_DELTA_WS_FLAG, False):
+                capable = True
+                watched.update(ws.get(FOLD_WATCH_WS_KEY) or ())
+            else:
+                legacy = True
+        return legacy, capable, frozenset(watched)
 
     def ws_client_count(self) -> int:
         return len(self._owner._ws_clients)
@@ -662,6 +887,9 @@ class WebSocketHub:
         if owner:
             self._owner._owner_ws_clients.add(ws)
         self._serving_loop_provider()
+        if owner and self._fold_watch_listeners:
+            # A new owner socket is legacy until it is flagged capable.
+            self._fold_watch_changed()
 
     async def send_members_subscribed(self, ws: web.WebSocketResponse) -> None:
         """Send the one-shot ``members_subscribed`` frame to a NEW owner socket.
@@ -776,9 +1004,12 @@ class WebSocketHub:
             self._owner._ws_clients.remove(ws)
         except ValueError:
             pass
+        was_owner = ws in self._owner._owner_ws_clients
         self._owner._owner_ws_clients.discard(ws)
         self._owner._ws_log_subscribers.discard(ws)
         self._owner._ws_subagent_subscribers.discard(ws)
+        if was_owner and self._fold_watch_listeners:
+            self._fold_watch_changed()
 
     def subscribe_logs(self, ws: web.WebSocketResponse) -> None:
         self._owner._ws_log_subscribers.add(ws)
@@ -838,3 +1069,5 @@ class WebSocketHub:
         self._owner._owner_ws_clients.clear()
         self._owner._ws_log_subscribers.clear()
         self._owner._ws_subagent_subscribers.clear()
+        if self._fold_watch_listeners:
+            self._fold_watch_changed()

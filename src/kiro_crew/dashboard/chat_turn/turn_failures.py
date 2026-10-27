@@ -77,7 +77,7 @@ async def _on_cancelled(turn: _ChatTurn) -> None:
     # Mark the cancel on _stop_reason too — every cancelled exit (the Stop
     # press AND the involuntary cases: tab close, idle sweep, shutdown, the
     # turn ceiling converted one frame above _run_chat) is a discarded turn whose history
-    # must stay owed, so the debt correctly stays armed (GPT 6.1 F1).
+    # must stay owed, so the debt correctly stays armed.
     _stop_reason = STOP_REASON_CANCELLED
     turn._stop_reason = _stop_reason
     await _persist_partial_reply(turn, _cancel_reason)

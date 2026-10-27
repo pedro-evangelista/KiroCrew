@@ -28,6 +28,7 @@ import { useTableColumnWidths, type TableColumnSpec } from '../hooks/useTableCol
 import { useAppSelector, useAppDispatch } from '../store'
 import { triggerRefresh } from '../store/dashboardSlice'
 import { SaveCreateLabel, scheduleLabel, scheduleMinutes } from '../utils/cronUtils'
+import { isPartlyBlocked } from '../utils/cronPartlyBlocked'
 import { useSortableTable } from '../hooks/useSortableTable'
 import { ResizableTableHead, SortableTableHead } from '../components/SortableHeader'
 import ExecutionsView from '../components/ExecutionsView'
@@ -187,16 +188,31 @@ const fmtIn = (ts?: number | null) => {
  * Empty-state folder chip with confirm-before-delete, inline rename, and error display.
  * Uses the same inline-edit pattern as CronFolderHeader (Enter=commit, Escape=cancel).
  */
-function EmptyFolderChip({ folder, onRename, onDelete, error }: { folder: CronFolder; onRename: (name: string) => void; onDelete: () => void; error: string | null }) {
+export function EmptyFolderChip({ folder, onRename, onDelete, error }: { folder: CronFolder; onRename: (name: string) => void; onDelete: () => void; error: string | null }) {
   const [confirming, setConfirming] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState(folder.name)
   const ime = useImeGuard()
 
+  // The chip name is a plain span, so the folder-actions trigger is the only
+  // control that opens the rename and stays mounted through it. Closing the
+  // editor unmounts the focused input, and a browser then drops focus to
+  // `document.body`, so Enter and Escape hand focus back to that trigger. A
+  // pointer blur moves nothing: the user already chose where focus goes. The
+  // move waits a frame so it runs after the render that closes the editor.
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  // Set when the Rename item is picked, read once when the menu finishes
+  // closing (see `onCloseAutoFocus` below).
+  const renamePickedRef = useRef(false)
+
   const commitRename = () => {
     const trimmed = editName.trim()
     if (trimmed && trimmed !== folder.name) onRename(trimmed)
+  }
+  const closeEditor = (reason: 'enter' | 'escape' | 'blur') => {
+    if (reason !== 'escape') commitRename()
     setEditing(false)
+    if (reason !== 'blur') requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }))
   }
 
   return (
@@ -211,9 +227,9 @@ function EmptyFolderChip({ folder, onRename, onDelete, error }: { folder: CronFo
             value={editName}
             onChange={e => setEditName(e.target.value)}
             {...ime.bindEnter({
-              onEnter: commitRename,
-              onEscape: () => setEditing(false),
-              onBlur: commitRename,
+              onEnter: () => closeEditor('enter'),
+              onEscape: () => closeEditor('escape'),
+              onBlur: () => closeEditor('blur'),
             })}
           />
         ) : (
@@ -222,12 +238,27 @@ function EmptyFolderChip({ folder, onRename, onDelete, error }: { folder: CronFo
         <span className="text-[12px] text-muted">{i18nT('pages.schedulePage.cronFolders.job_count', { count: 0 })}</span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Btn className="!p-1 !border-none ml-auto" aria-label={i18nT('pages.schedulePage.cronFolders.folder_actions')}>
+            <Btn ref={triggerRef} className="!p-1 !border-none ml-auto" aria-label={i18nT('pages.schedulePage.cronFolders.folder_actions')}>
               <MoreHorizontal size={14} />
             </Btn>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[140px]">
-            <DropdownMenuItem onSelect={() => { setEditName(folder.name); setTimeout(() => setEditing(true), 0) }}>
+          <DropdownMenuContent
+            align="end"
+            className="min-w-[140px]"
+            // Radix restores focus to the trigger when the menu closes, on a
+            // timer that runs AFTER the rename input has mounted and taken
+            // focus. That restore blurs the input, and the blur commits the
+            // unchanged name and closes the editor the user just opened. When
+            // Rename was picked the input already holds focus, so skip the
+            // restore; Delete keeps it, so its confirmation appears with focus
+            // still on the trigger beside it.
+            onCloseAutoFocus={e => {
+              if (!renamePickedRef.current) return
+              renamePickedRef.current = false
+              e.preventDefault()
+            }}
+          >
+            <DropdownMenuItem onSelect={() => { setEditName(folder.name); renamePickedRef.current = true; setTimeout(() => setEditing(true), 0) }}>
               <Pencil size={13} className="shrink-0" />
               <span>{i18nT('pages.schedulePage.cronFolders.rename')}</span>
             </DropdownMenuItem>
@@ -559,8 +590,10 @@ export default function SchedulePage() {
       return ka - kb || compareText(scheduleLabel(a), scheduleLabel(b))
     },
     status: (a: CronJob, b: CronJob) => {
+      // A partly blocked run sorts between a failed one and a clean one, the
+      // same order its badge reads in: worse than OK, better than Error.
       const rank = (j: CronJob) =>
-        j.is_running ? 4 : !j.enabled ? 0 : j.last_status === 'error' ? 1 : j.last_status === 'ok' ? 2 : 3;
+        j.is_running ? 5 : !j.enabled ? 0 : isPartlyBlocked(j) ? 2 : j.last_status === 'error' ? 1 : j.last_status === 'ok' ? 3 : 4;
       return rank(a) - rank(b);
     },
     lastRun: (a: CronJob, b: CronJob) => (a.last_run_ts || 0) - (b.last_run_ts || 0),
@@ -1107,7 +1140,7 @@ export default function SchedulePage() {
                     without it. */}
                 <TableCell className="truncate" title={j.schedule}>{scheduleLabel(j)}{j.timezone && <span className="block truncate text-[11px] text-muted">{j.timezone.replace(/_/g, ' ')}</span>}</TableCell>
                 <TableCell className="align-top"><CollapsibleMessage message={j.script ? j.script : j.command ? j.command : j.safeMessage} /></TableCell>
-                <TableCell title={j.last_error ? '' : j.last_result || ''}><span className="block truncate">{j.is_running ? <Badge variant="ok"><span className="inline-block w-1.5 h-1.5 rounded-full bg-ok animate-pulse mr-1 align-middle" />{i18nT('pages.schedulePage.running')}</Badge> : j.enabled ? (j.last_status === 'ok' ? <Badge variant="ok">{i18nT('pages.schedulePage.ok')}</Badge> : j.last_status === 'error' ? <Badge variant="err">{i18nT('pages.schedulePage.error')}</Badge> : <Badge variant="ok">{i18nT('pages.schedulePage.ready')}</Badge>) : <Badge variant="warn">{i18nT('pages.schedulePage.paused')}</Badge>}</span></TableCell>
+                <TableCell title={j.last_error ? '' : j.last_result || ''}><span className="block truncate">{j.is_running ? <Badge variant="ok"><span className="inline-block w-1.5 h-1.5 rounded-full bg-ok animate-pulse mr-1 align-middle" />{i18nT('pages.schedulePage.running')}</Badge> : j.enabled ? (j.last_status === 'ok' ? <Badge variant="ok">{i18nT('pages.schedulePage.ok')}</Badge> : isPartlyBlocked(j) ? <Badge variant="warn" title={`${i18nT('pages.schedulePage.partial_hint')}\n${j.last_error || ''}`}>{i18nT('pages.schedulePage.partial')}</Badge> : j.last_status === 'error' ? <Badge variant="err">{i18nT('pages.schedulePage.error')}</Badge> : <Badge variant="ok">{i18nT('pages.schedulePage.ready')}</Badge>) : <Badge variant="warn">{i18nT('pages.schedulePage.paused')}</Badge>}</span></TableCell>
                 <TableCell className="text-muted">
                   <span className="block truncate">{fmtAgo(j.last_run_ts)}</span>
                   {/* Retry telemetry for the LAST run only: a job that needed

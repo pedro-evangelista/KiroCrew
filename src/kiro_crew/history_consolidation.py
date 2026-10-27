@@ -1210,6 +1210,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _LESSON_PASSTHROUGH_FIELDS,
         _PLACEHOLDER_BODIES,
         _SEMANTIC_OMISSION_NOTICE,
+        _SEMANTIC_SNAPSHOT_PAGE,
         _bounded_semantic_table,
         _BoundedTable,
         _EmbedBudget,
@@ -1218,6 +1219,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _LessonDeleteDecision,
         _recency,
         _reroute_lesson_semantic_keys,
+        _semantic_snapshot_in_pages,
         _session_facets,
         _withhold_unseen_deletes,
     )

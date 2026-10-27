@@ -51,6 +51,7 @@ import EmbedTabStrip from './components/EmbedTabStrip'
 // Dev-only layout-editor harness (RFC §7 PR 2). Lazy so it never weighs the main
 // bundle — it is a developer route, not a shipped surface.
 const LayoutEditorHarnessPage = lazy(() => import('./pages/LayoutEditorHarnessPage'))
+
 import UpdateModal from './components/UpdateModal'
 
 import ComputerUseLiveView from './components/ComputerUseLiveView'

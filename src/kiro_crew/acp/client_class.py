@@ -18,7 +18,7 @@ import uuid
 from collections import deque
 from contextlib import suppress
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from kiro_crew import pinned_fs
 from kiro_crew.acp import client_claude_seed as _client_claude_seed
@@ -27,6 +27,7 @@ from kiro_crew.acp import client_elicitation as _client_elicitation
 from kiro_crew.acp import client_lifecycle as _client_lifecycle
 from kiro_crew.acp import client_mcp_array as _client_mcp_array
 from kiro_crew.acp import client_model_selection as _client_model_selection
+from kiro_crew.acp import client_native_children as _client_native_children
 from kiro_crew.acp import client_permissions as _client_permissions
 from kiro_crew.acp import client_seed_ownership as _client_seed_ownership
 from kiro_crew.acp import client_spawn_env as _client_spawn_env
@@ -79,6 +80,7 @@ from kiro_crew.mcp_gateway.claim import mint_stub_session_token
 
 if TYPE_CHECKING:
     from kiro_crew.acp.harness.pi_steer import PiSteerChannel
+    from kiro_crew.acp.session_mcp import ToolsAllowlist
     from kiro_crew.acp.skill_projection import NativeSkillProjection
 
 #: The client's own logger: this code logged under that name before the split.
@@ -108,6 +110,25 @@ class AcpClient:
     # The scrub this session applies to what a harness reports back, handed to the
     # host adapters that quote such a value (``ProcessSession._scrub_observed``).
     _scrub_observed = staticmethod(_scrub_observed)
+
+    # Idle reader state (see _maybe_start_idle_reader). Class-level so a client
+    # built without __init__ reads the idle defaults.
+    #: Called with this client when the agent starts a turn on its own between
+    #: prompts. The callee then reads that turn with ``stream_unsolicited``.
+    on_agent_turn: Callable[[AcpClient], None] | None = None
+    _idle_reader: asyncio.Task[None] | None = None
+    # Readers currently claiming stdout; the idle reader runs only at zero.
+    _stdout_claims: int = 0
+    # The frame the idle reader saw an agent-started turn begin with, which it
+    # left in _buffer (see _agent_turn_pending).
+    _agent_turn_start: JsonRpcMessage | None = None
+    # _install_idle_reader has bound its steps on this client.
+    _idle_reader_installed: bool = False
+    # Held by stream_unsolicited while it reads; a prompt waits on it (see
+    # _install_idle_reader).
+    _agent_turn_gate: asyncio.Lock | None = None
+    # Prompts past that gate and not yet finished.
+    _prompts_in_flight: int = 0
 
     def __init__(
         self,
@@ -231,6 +252,9 @@ class AcpClient:
         # array cache: the host already holds the array this describes, and dropping
         # the cache for the NEXT session must not erase what THIS one consumed.
         self._session_agent_spec: dict[str, Any] | None = None
+        # A member session's spec ``tools`` allowlist on a mirror-less array host
+        # (pi), from the same parse; the pooled stubs pass through it.
+        self._member_stub_allowlist: ToolsAllowlist | None = None
         self.member_context = False
         self._loaded_capability_template = ""
         self._capability_projection_gaps: tuple[str, ...] = ()
@@ -487,6 +511,19 @@ class AcpClient:
         # half was refused, or ``""``. Set by ``_push_model_via_effort_split``.
         self.model_pin_partial: str = ""
         self._child_pids: dict[int, ChildRecord] = {}  # pid → (start_time, basename)
+        # Claude Code's native subagents (``client_native_children``): the child ids
+        # this session has seen, bounded by NATIVE_CHILD_ROSTER_CAP with the overflow
+        # counted, one card row per id, the Agent call each delegation came from,
+        # and the ids listed this turn, in arrival order.
+        self._native_child_sids: set[str] = set()
+        self._native_child_overflow = 0
+        self._native_child_rows: dict[str, dict[str, Any]] = {}
+        self._native_child_by_tool_use: dict[str, str] = {}
+        self._native_child_turn: dict[str, None] = {}
+        # One ``StreamRedactor`` per native child whose text is streaming, keyed by
+        # its tracked id (so bounded by the same cap), flushed and dropped when the
+        # roster reports the child done or failed (``client_turn``).
+        self._native_child_redactors: dict[str, Any] = {}
         self.last_prompt_stats = AcpPromptStats()
         # Credits kiro reported while no turn was running (a compaction waited
         # on between turns), held for the next turn's bill; see _track_metadata.
@@ -693,6 +730,10 @@ class AcpClient:
         # tool_call_id — the RESULT event carries no title. See
         # _maybe_fire_post_tool_hooks.
         self._observed_tool_calls: dict[str, tuple[str, str]] = {}
+        # This turn's tool-call ids whose SEL record is settled: the call asked the
+        # host (its consumer writes the record) or the unasked-call audit wrote it.
+        # See _maybe_audit_unasked_tool_call.
+        self._sel_settled_tool_calls: set[str] = set()
         self._last_stop_reason: str = ""
         # Dynamic config from ACP session/new response and config_option_update notifications.
         # Only the effort configOptions are consumed (model lists come from
@@ -1278,6 +1319,16 @@ class AcpClient:
     _read_message = _client_transport._read_message
     _wait_for_response = _client_transport._wait_for_response
     _drain_notifications = _client_transport._drain_notifications
+    _install_idle_reader = _client_transport._install_idle_reader
+    _claiming_stdout = _client_transport._claiming_stdout
+    _read_turn = _client_transport._read_turn
+    _claim_stdout = _client_transport._claim_stdout
+    _release_stdout = _client_transport._release_stdout
+    _stop_idle_reader = _client_transport._stop_idle_reader
+    _cancel_idle_reader = _client_transport._cancel_idle_reader
+    _agent_turn_pending = _client_transport._agent_turn_pending
+    _maybe_start_idle_reader = _client_transport._maybe_start_idle_reader
+    _idle_read_loop = _client_transport._idle_read_loop
 
     # Prepare an ``AcpClient`` spawn before the process exists: ``kiro_crew.acp.client_spawn_env``.
     _prepare_spawn_workspace = _client_spawn_env._prepare_spawn_workspace
@@ -1300,9 +1351,23 @@ class AcpClient:
     send_message = _client_turn.send_message
     send_message_stream = _client_turn.send_message_stream
     stream_events = _client_turn.stream_events
+    stream_unsolicited = _client_turn.stream_unsolicited
     _dispatch_events = _client_turn._dispatch_events
     _send_prompt = _client_turn._send_prompt
     _read_prompt_response = _client_turn._read_prompt_response
+
+    # Read Claude Code's native subagents on this session: ``kiro_crew.acp.client_native_children``.
+    _native_children_declared = _client_native_children._native_children_declared
+    _reset_native_child_turn = _client_native_children._reset_native_child_turn
+    _native_child_roster = _client_native_children._native_child_roster
+    _note_subagent_update = _client_native_children._note_subagent_update
+    _note_session_message = _client_native_children._note_session_message
+    _native_child_of = _client_native_children._native_child_of
+    _native_child_events = _client_native_children._native_child_events
+    # Their redaction before the turn yields them, and the flush of the text it
+    # holds for a turn cut short: ``kiro_crew.acp.client_turn``.
+    _redact_native_child_events = _client_turn._redact_native_child_events
+    flush_native_child_text = _client_turn.flush_native_child_text
 
     # Control an ``AcpClient`` turn from outside it: ``kiro_crew.acp.client_turn_control``.
     command_result = _client_turn_control.command_result
@@ -1423,6 +1488,8 @@ class AcpClient:
     # Turn an ``AcpClient`` session's tool-call frames into events, and audit them: ``kiro_crew.acp.client_tool_events``.
     _extract_text_chunk = _client_tool_events._extract_text_chunk
     _maybe_audit_tool_call = _client_tool_events._maybe_audit_tool_call
+    _maybe_audit_unasked_tool_call = _client_tool_events._maybe_audit_unasked_tool_call
+    _note_asked_tool_call = _client_tool_events._note_asked_tool_call
     _maybe_fire_pre_tool_hooks = _client_tool_events._maybe_fire_pre_tool_hooks
     _maybe_fire_post_tool_hooks = _client_tool_events._maybe_fire_post_tool_hooks
     _emit_tool_interrupted_sel = _client_tool_events._emit_tool_interrupted_sel

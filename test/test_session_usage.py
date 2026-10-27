@@ -1088,7 +1088,7 @@ class TestIdentityAccountCoupling:
                 "arn:aws:codewhisperer:us-east-1:1:profile/A",
                 id="matching_arns_are_coupled",
             ),
-            # The exact misattribution the reviewer flagged: API billed account A,
+            # The misattribution this guards: API billed account A,
             # whoami describes account B.
             pytest.param(
                 False,

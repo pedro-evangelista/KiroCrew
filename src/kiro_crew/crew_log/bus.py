@@ -430,6 +430,54 @@ def publish(kind: str, event: Any) -> None:
             _count_subscriber_error(kind)
 
 
+def has_subscriber(
+    kind: str, *, scope: str | None = None, key: str | None = None, fold: str | None = None
+) -> bool:
+    """Whether a publish of *kind* for (scope, key, fold) would reach any subscriber.
+
+    The same bucket lookup :func:`publish` does, without building an event or calling
+    anyone: at most eight dict lookups under the lock. A wildcard subscriber matches
+    every cell, so while one is registered this is always ``True``.
+    """
+    with _lock:
+        buckets = _subscribers.get(kind)
+        if not buckets:
+            return False
+        if _ANY in buckets:
+            return True
+        for s in {scope, None}:
+            for k in {key, None}:
+                for f in {fold, None}:
+                    if buckets.get((s, k, f)):
+                        return True
+        return False
+
+
+#: Whether the eager folder may skip a slot fold no subscriber matches. OFF by default,
+#: so a process with no dashboard -- or a gateway before its exporter is installed --
+#: folds every slot fold exactly as before. Only the dashboard's WS exporter turns it
+#: on, and only while it holds keyed subscriptions instead of its wildcard one.
+_slot_folds_on_demand = False
+
+
+def set_slot_folds_on_demand(enabled: bool) -> None:
+    """Let (or stop letting) the eager folder skip a slot fold nobody subscribes to."""
+    global _slot_folds_on_demand
+    _slot_folds_on_demand = bool(enabled)
+
+
+def slot_fold_wanted(key: str, fold: str) -> bool:
+    """Whether the eager folder should read and publish *key*'s slot fold *fold*.
+
+    ``True`` unless on-demand mode is on (:func:`set_slot_folds_on_demand`) and no
+    :data:`FOLD_ADVANCED` subscriber matches (slot, key, fold). A fold skipped here is
+    still folded by the read path when someone reads it.
+    """
+    if not _slot_folds_on_demand:
+        return True
+    return has_subscriber(FOLD_ADVANCED, scope=SCOPE_SLOT, key=key, fold=fold)
+
+
 def subscriber_count(kind: str) -> int:
     """How many subscribers *kind* has, across every filter. For a test and a log line."""
     with _lock:
@@ -444,12 +492,14 @@ def reset_for_tests() -> None:
     that is already gone. Every forgotten subscriber is marked disposed, so a publish
     already holding it calls nothing.
     """
+    global _slot_folds_on_demand
     with _lock:
         for buckets in _subscribers.values():
             for listed in buckets.values():
                 for sub in listed:
                     sub.active = False
         _subscribers.clear()
+        _slot_folds_on_demand = False
 
 
 def _log_exc(message: str, *args: Any) -> None:

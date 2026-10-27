@@ -197,6 +197,14 @@ is read before the spawn and again after start, and both reads must declare
 `tools: []`. On either branch the read after start narrows a change to the file the
 harness loads but cannot close one made and restored inside the spawn window.
 
+"Declares `tools: []`" in this check means mounts nothing (`acp.client_mcp_array.spec_is_toolless`):
+`tools` is an empty list, `allowedTools`, `mcpServers`, `hooks`, `permissions` and
+`toolsSettings` are absent or empty, `includePowers` is absent or `false`, and
+`includeMcpJson` is exactly `false`. The same check gates every `deny_all_tools` channel
+turn on `kirocrew-guest` and every `kirocrew-lite` background turn on a backend routed
+through the agent spec; either is refused, and its session reset, when the spec on disk
+mounts anything.
+
 1. Delivered ONLY when Crew governs the session's permission surface
    (`_permission_surface_governed` in `acp/client_class.py`): Crew authored
    `<work_dir>/.claude/settings.local.json`, validated that file's current bytes

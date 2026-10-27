@@ -646,6 +646,8 @@ _MARKER_WRAP_RUN = rf"{_MARKER_WRAP_CLASS}{{0,3}}"
 
 #: Label body, spelled once per regex so LINE and TRAILER cannot drift. LINE
 #: stops at a newline; TRAILER spans them (``DOTALL``, as the old ``.*`` did).
+#: No part of the LINE pattern may match ``\n``: :func:`_line_marker_candidates`
+#: scans only the lines holding the head, which is equivalent only while that holds.
 #: The one body-shaped pattern NOT derived from these is
 #: :data:`_OPTIONS_TAIL_PREFIX_RE`, which is a prefix closure and has to stay
 #: looser -- see the reason there before "fixing" it to match.
@@ -770,6 +772,29 @@ def _marker_labels_have_unmatched_opener(labels: str) -> bool:
     return bool(open_stack)
 
 
+def _line_marker_candidates(pattern: re.Pattern[str], text: str) -> Iterator[re.Match[str]]:
+    """``pattern.finditer(text)`` for the LINE pattern, run only on lines holding the head.
+
+    Every LINE match contains the literal ``[OPTIONS:`` and stays on its line: the
+    body, closer, tic, wrapper run and trailing ``[ \\t]*`` all exclude ``\\n``, and
+    each lookahead is bounded by them. So a line without the head cannot match, and
+    skipping it returns the same matches. It matters because the optional
+    ``^``-anchored wrapper prefix is attempted at every position, which makes a
+    whole-text scan cost the whole message for every call. Under ``re.MULTILINE``
+    ``^`` holds at ``pos`` (offset 0 or just after a newline) and ``$`` at
+    ``endpos`` (a newline or the end of the text), the anchors the whole-text scan
+    sees there. TRAILER spans newlines, so it never comes through here.
+    """
+    head = text.find("[OPTIONS:")
+    while head != -1:
+        start = text.rfind("\n", 0, head) + 1
+        end = text.find("\n", head)
+        if end == -1:
+            end = len(text)
+        yield from pattern.finditer(text, start, end)
+        head = text.find("[OPTIONS:", end)
+
+
 class _MarkerMatcher:
     """A candidate pattern plus the balance decision the pattern cannot make.
 
@@ -792,7 +817,11 @@ class _MarkerMatcher:
 
     def finditer(self, text: str) -> Iterator[re.Match[str]]:
         """Every candidate whose terminator is its own, in order."""
-        for match in self._pattern.finditer(text):
+        if self._pattern is _RAW_OPTIONS_RE_LINE:
+            candidates = _line_marker_candidates(self._pattern, text)
+        else:
+            candidates = self._pattern.finditer(text)
+        for match in candidates:
             if not _marker_labels_have_unmatched_opener(match.group("labels")):
                 yield match
 

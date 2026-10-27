@@ -282,6 +282,7 @@ from conftest_resets import (  # noqa: E402,F401 -- bound for pytest and importe
     _isolate_advertised_model_cache,
     _isolate_display_verdicts,
     _isolate_kiro_window_cache,
+    _no_boot_heap_freeze,
     _no_boot_sandbox_sweep,
     _no_carried_auto_update_effect,
     _no_live_catalog_network,
@@ -1266,3 +1267,25 @@ def _no_leaked_interleave_hook():
             "earlier test leaked it (this test is the victim, not the cause). "
             "Set it with monkeypatch.setattr so it reverts even on failure."
         )
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _drain_gc_cycles():
+    """Collect GC cycles accumulated during a test module before the next module starts.
+
+    asyncio.run() tests can leave BaseSubprocessTransport / PosixPath reference
+    cycles that CPython defers until the next GC pass.  If that pass fires inside
+    a later module on the same xdist worker, pytest's unraisablehook attributes
+    the ExceptionGroup to an innocent test in that later module.  Collecting once
+    per module boundary (~587 modules) is ~26× cheaper than collecting after every
+    test (~15 000) while still covering the cross-module leak shape.  Two passes
+    cover chains of two-level cycles (transport -> protocol -> path).
+
+    Tests that can also leak cycles within their own module keep a finer-grained
+    local fixture alongside this one.
+    """
+    import gc
+
+    yield
+    gc.collect()
+    gc.collect()

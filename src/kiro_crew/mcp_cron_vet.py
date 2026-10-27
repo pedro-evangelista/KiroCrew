@@ -496,10 +496,8 @@ def _vet_script_contents(text: str) -> str | None:
     ``resolve_script_path`` validates only the *path*, so without this the body
     is never inspected. An ungranted script runs under ``mode="cc"`` and a
     secret-granted one under ``strict``. ``cc`` hides the credential stores on
-    Linux; on macOS it deliberately leaves ``~/.aws`` readable (it is the
-    Claude Code provider's tier, and that provider authenticates to Bedrock
-    through ``credential_process`` under ``~/.aws``), and Windows has no OS
-    sandbox backend at all. So a body that names ``~/.aws/credentials`` or
+    Linux and macOS (only ``~/.aws/config`` stays readable), but Windows has no
+    OS sandbox backend at all and the sandbox can be turned off. So a body that names ``~/.aws/credentials`` or
     ``os.environ["AWS_SECRET_ACCESS_KEY"]`` and POSTs it out is worth refusing
     at storage time rather than relying on one runtime control alone.
     Credential exfiltration -- which a human rubber-stamping the ``cron_add``

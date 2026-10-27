@@ -52,6 +52,8 @@ import sys as _sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from kiro_crew.edition_install_fence import install_root_write as _install_root_write
+
 from .diagnostics import annotate_refusal, refusal_diagnostic
 
 logger = logging.getLogger(__name__)
@@ -388,6 +390,7 @@ def sensitive_write_path_refusal(path_str: str, base_dir: str | None = None) -> 
             path_str, _SENSITIVE_HOME_DIRS + _WRITE_PROTECTED_HOME_PATHS, base_dir, strict=True
         ) or _is_keystone_publish_artifact(path_str, base_dir, strict=True)
         matched = matched or _native_store_write(path_str, base_dir)
+        matched = matched or _install_root_write(path_str, base_dir)
     except PathResolutionStalled as exc:
         return _stall_refusal(exc, path_str)
     return f"Blocked: write to protected path: {path_str}" if matched else None
@@ -740,6 +743,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _KIRO_AGENTS_DIR,
         _KIRO_CLI_WRITE_TIER_LEAVES,
         _KIRO_MATE_AGENTS_DIR,
+        _KIRO_MATE_STATE_LEAVES,
         _KIRO_SETTINGS_MCP_JSON,
         _LEAF_SEPARATOR,
         _NATIVE_ALLOW_STORE_LEAVES,

@@ -640,7 +640,7 @@ class TestTransientCompactionRetry:
         log = MagicMock()
         log.get_metadata.return_value = {}
         log.get_metadata_status.return_value = ({}, True)
-        log.recent.return_value = [
+        log.read_messages.return_value = [
             {"role": "user", "content": "earlier question"},
             {"role": "assistant", "content": "earlier partial answer"},
         ]
@@ -807,6 +807,8 @@ class TestStopReasonCancelled:
         )
 
         mock_consolidator.maybe_consolidate.assert_not_called()
+        # The turn itself ran: its partial text reached the thread.
+        assert any("partial" in t for t in _visible_texts(slack)), _visible_texts(slack)
 
     @pytest.mark.asyncio
     async def test_handler_stop_reason_end_turn_preserves_existing_behavior(self):

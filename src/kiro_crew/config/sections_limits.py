@@ -476,6 +476,18 @@ class ResourceLimitsConfig:
             nullable=True,
         ),
     )
+    scope_memory_high_pct: int | None = field(
+        default=None,
+        metadata=_meta(
+            "Scope memory soft ceiling (%)",
+            "cgroup MemoryHigh for EACH agent runtime scope, as a percent of "
+            "that scope's own MemoryMax. A runtime that grows past it reclaims "
+            "its own page cache and is throttled alone, before the shared "
+            "slice ceiling slows every runtime. Unset or out of range (1-100) "
+            "uses the default (90); 0 emits no MemoryHigh at all. Linux only.",
+            nullable=True,
+        ),
+    )
     xdist_auto_cap: int | None = field(
         default=None,
         metadata=_meta(
@@ -512,6 +524,9 @@ class ResourceLimitsConfig:
             ),
             max_total_processes=_limit_int(
                 section.get("max_total_processes"), "max_total_processes", lo=0
+            ),
+            scope_memory_high_pct=_limit_int(
+                section.get("scope_memory_high_pct"), "scope_memory_high_pct", lo=0, hi=100
             ),
             xdist_auto_cap=_limit_int(section.get("xdist_auto_cap"), "xdist_auto_cap", lo=-1),
         )

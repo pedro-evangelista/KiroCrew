@@ -274,8 +274,8 @@ async def api_chat_slot_tags(request: web.Request) -> web.Response:
                 # must adopt; broadcast it so they reconverge now.
                 _bump_slot_tags_revision(slot)
             # The UNPINNED periodic flush may have persisted the provisional
-            # value to the slot's current transcript while this save awaited
-            # (review-caught): mark dirty so the next flush reconverges the
+            # value to the slot's current transcript while this save awaited:
+            # mark dirty so the next flush reconverges the
             # durable record to the rolled-back live state.
             slot._dirty = True
             state.push_slots_update()
@@ -819,7 +819,7 @@ async def api_chat_slot_drop(request: web.Request) -> web.Response:
 
     # Serialize the whole resolve/re-check/mutate/persist/rollback span under
     # the same lock every other tags writer holds (PUT /tags, the tag-delete
-    # strip, auto-tag). Two reasons, both review-caught: (1) with awaits
+    # strip, auto-tag). Two reasons: (1) with awaits
     # inside the span, a second concurrent writer would capture this one's
     # value as its rollback snapshot, and value-based rollback cannot tell
     # "my write survived" from "someone else wrote the same value" — a
@@ -941,7 +941,7 @@ async def api_chat_slot_drop(request: web.Request) -> web.Response:
                 # rejected tags.
                 _bump_slot_tags_revision(slot)
             # The UNPINNED periodic flush may have persisted the provisional
-            # value while this save awaited (review-caught): mark dirty so the
+            # value while this save awaited: mark dirty so the
             # next flush reconverges the durable record to the live state.
             slot._dirty = True
             state.push_slots_update()

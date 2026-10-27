@@ -355,7 +355,7 @@ _STORE_SIGNATURES = {
     "embed_semantic_retirement": "(self, key: 'str', value_json: 'str') -> 'list[float] | None'",
     "embedding_repair_state": "(self, generation: 'str') -> 'tuple[bool, int]'",
     "find_contradiction_candidates": "(self, rule: 'str', threshold_low: 'float' = 0.4, threshold_high: 'float' = 0.85, rule_emb: 'list[float] | None' = None, repo_scope: 'str | None' = None) -> 'list[dict]'",
-    "get_all_semantic": "(self, limit: 'int | None' = None, offset: 'int' = 0, *, q: 'str' = '') -> 'list[dict]'",
+    "get_all_semantic": "(self, limit: 'int | None' = None, offset: 'int' = 0, *, q: 'str' = '', after_key: 'str | None' = None, exclude_lessons: 'bool' = False) -> 'list[dict]'",
     "get_context_preview": "(self, query_text: 'str' = '') -> 'dict'",
     "get_episodic_context": "(self, query_embedding: 'list[float] | None' = None, query_text: 'str' = '', cap: 'int' = 3000) -> 'str'",
     "get_episodic_list": "(self, limit: 'int' = 50, offset: 'int' = 0, tag_filter: 'list[str] | None' = None, *, q: 'str' = '') -> 'list[dict]'",

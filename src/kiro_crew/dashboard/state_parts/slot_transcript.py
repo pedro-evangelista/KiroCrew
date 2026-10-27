@@ -300,6 +300,15 @@ def append(
     meta: dict | None = None,
     mint_mid: bool = True,
 ) -> dict[str, Any]:
+    # A durable row ends the segment a permission request held open, so the
+    # reply's text lands above it. Cleared first: the cut appends a row too.
+    owed_cut = getattr(self, "_owed_segment_cut", None)
+    if owed_cut is not None and role not in _WIRE_ONLY_ROLES:
+        self._owed_segment_cut = None
+        try:
+            owed_cut()
+        except Exception:
+            logger.warning("owed segment cut failed for slot %s", self.key, exc_info=True)
     # A live row the person typed makes any in-flight return summary stale.
     # The local import avoids a state -> warm_task_brief -> state cycle, and
     # replay appends (broadcast=False) deliberately do not cancel current work.

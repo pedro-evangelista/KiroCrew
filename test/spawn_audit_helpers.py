@@ -14,6 +14,9 @@ BENIGN_PACKAGE_SPAWNS: frozenset[str] = frozenset(
         # Coder lifecycle: resolved operator CLI, fixed verbs, saved template/preset
         # and validated generated names; cwd the data home, stdin DEVNULL, no shell.
         "coder/client.py::_run",
+        # Embedding child: this interpreter, -P, a fixed module; requests travel
+        # on its pipes as data, never as argv. No agent input reaches the spawn.
+        "embeddings_child.py::spawn",
         # Gateway transport: argv from the resolved CLI, saved deployment and
         # validated workspace; the shell text is a quoted GUEST command and payloads
         # ride stdin. Host credential isolation would prevent coder login.

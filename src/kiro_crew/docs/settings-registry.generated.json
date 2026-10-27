@@ -19,7 +19,7 @@
       "label": "Update the gateway automatically",
       "tab": "about",
       "route": "/settings/about?highlight=key%3Aauto_update",
-      "description": "Installs a new release once no work is running and restarts the gateway, on installs that can update themselves.",
+      "description": "Restarts the gateway to install a new release once no work is running. When off, it stays on its current version.",
       "configKey": "auto_update"
     },
     {
@@ -721,7 +721,7 @@
       "label": "Prevent sleep while running",
       "tab": "chat",
       "route": "/settings/chat/advanced?highlight=key%3Adashboard.prevent_sleep",
-      "hint": "Keep your computer awake while a task is running",
+      "hint": "Keep your computer awake while a task is running. On some Windows laptops (Modern Standby), locking the screen can still let it sleep, so keep the screen on for long tasks.",
       "configKey": "dashboard.prevent_sleep"
     },
     {
@@ -792,7 +792,7 @@
       "label": "Show Full Titles While Scrolling",
       "tab": "chat",
       "route": "/settings/chat/sessions?highlight=chat.show-full-titles-while-scrolling",
-      "hint": "While you scroll the session list, titles the sidebar cuts off show in full"
+      "hint": "While you scroll the session list, cut-off titles show in full"
     },
     {
       "id": "chat.show-pasted-text-in-full",
@@ -1593,8 +1593,7 @@
       "id": "voice.aws-region-transcribe",
       "label": "AWS Region (Transcribe)",
       "tab": "voice",
-      "route": "/settings/voice?highlight=voice.aws-region-transcribe",
-      "description": "AWS region for Transcribe"
+      "route": "/settings/voice?highlight=voice.aws-region-transcribe"
     },
     {
       "id": "voice.custom-model-file",

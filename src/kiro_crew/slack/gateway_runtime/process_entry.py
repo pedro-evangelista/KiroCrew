@@ -374,6 +374,14 @@ async def run_gateway(
         refuse_policy_boot(exc)
         raise
 
+    # ── Plaintext credential notice ──
+    # One WARNING naming config keys that hold a plaintext token (key paths only,
+    # never values). Log-only, scheduled in the background and never awaited, so
+    # it cannot delay dashboard binding; a failure is logged at debug.
+    from kiro_crew.config.plaintext_credentials import start_plaintext_credentials_notice
+
+    start_plaintext_credentials_notice()
+
     # ── KAS kiro-cli floor ──
     # A configured KAS on a kiro-cli that cannot select the KAS engine falls back
     # to kiro-cli, with the notice in the log. Scheduled in the background, never

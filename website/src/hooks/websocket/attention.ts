@@ -14,6 +14,7 @@ import { isMemberThreadSlot } from '../unreadOnAttention'
 import { slotLastTsOf } from '../../store/slotLastTs'
 import type { SocketConnection } from './connection'
 import { appPathname } from '@/lib/basePath'
+import { bindSubagentReplaySender } from '../../lib/subagentReplayScope'
 
 /** True when this window is rendering the active slot's transcript: the chat
  *  routes (the root path serves ChatPage too) plus the popout and embed chat
@@ -135,6 +136,9 @@ export function attachFocusRelay({ socket, flushSlotActivity, onActiveSlotChange
     socket.sendIfOpen(hidden ? { type: 'slot_focused', slot: null, hidden: true } : { type: 'slot_focused', slot })
   }
   sendSlotFocusedImpl = slot => sendFocus(slot)
+  // A view that starts showing more slots' subagent cards asks for their
+  // finished runs on the same best-effort contract.
+  bindSubagentReplaySender(slots => socket.sendIfOpen({ type: 'subagent_replay', slots }))
   const composeSentAt = new Map<string, number>()
   bindComposeIntentSender(slot => {
     if (document.hidden || slot !== lastAnnounced) return
@@ -210,6 +214,7 @@ export function attachFocusRelay({ socket, flushSlotActivity, onActiveSlotChange
     unsubFocus()
     unsubMemberThread()
     sendSlotFocusedImpl = () => {}
+    bindSubagentReplaySender(null)
     bindComposeIntentSender(null)
   }
 }

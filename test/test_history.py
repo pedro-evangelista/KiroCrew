@@ -658,7 +658,6 @@ class TestListSessionsDedup:
     def test_skips_symlinks(self, tmp_path):
         log = ConversationLog(base_dir=tmp_path)
         log.append("original-session", "user", "hello")
-        # Create a symlink alias
         src = tmp_path / "original-session.jsonl"
         dst = tmp_path / "alias-session.jsonl"
         dst.symlink_to(src.name)

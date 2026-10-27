@@ -162,7 +162,6 @@ async def test_untracked_file_in_git_repo(tmp_path):
     (tmp_path / "init.txt").write_text("x")
     subprocess.run(["git", "add", "init.txt"], cwd=tmp_path, capture_output=True, check=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, capture_output=True, check=True)
-    # Create untracked file
     f = tmp_path / "untracked.txt"
     f.write_text("new file content")
 

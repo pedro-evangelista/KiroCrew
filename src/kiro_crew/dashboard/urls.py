@@ -267,11 +267,22 @@ def tunnel_origin_if_opted_in(use_tunnel_url: bool) -> str:
     does not pull in the tunnel manager, matching the deferred-import style the
     call sites already use.
     """
-    if not use_tunnel_url:
+    if not slack_tunnel_opt_in(use_tunnel_url):
         return ""
     from kiro_crew.tunnel import get_tunnel_url
 
     return get_tunnel_url()
+
+
+def slack_tunnel_opt_in(use_tunnel_url: bool) -> bool:
+    """``slack.use_tunnel_url`` as read; an enterprise build reads it as off.
+
+    The opt-in is a local switch that can point links at, and provision, a public
+    tunnel, so it shares the ``tunnel`` lock (RFC D3, ``kiro_crew.edition_locks``).
+    """
+    from kiro_crew.edition_locks import local_enable_locked
+
+    return use_tunnel_url and not local_enable_locked("tunnel")
 
 
 # ---------------------------------------------------------------------------

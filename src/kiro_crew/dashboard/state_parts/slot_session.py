@@ -390,7 +390,7 @@ def init_session_fields(self: _ChatSlot) -> None:
     # A save thread records a stricter folded line mode for loop-side adoption.
     self._pending_memory_mode = None
     self._app = ""  # App identity tag (App Kit §5.2)
-    # FIX 1 (unattended approval park). Evidence that a HUMAN has driven
+    # Unattended approval park. Evidence that a HUMAN has driven
     # this slot through a dashboard-user route (typed a message, answered an
     # approval). Only ever set by a caller with an empty ``request_app``, so
     # an app cannot forge it. It is the escape hatch on ``unattended``: an

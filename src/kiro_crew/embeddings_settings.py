@@ -125,10 +125,11 @@ _N_CTX = 2048
 # compute scratch arena and llama.cpp's per-token output buffer (one row per
 # micro-batch token, 610,772 bytes each for the shipped model) without reducing
 # the accepted context. On the shipped Qwen3 file and the vendored Linux CPU
-# runtime, 256, 512 and 2048 produce byte-identical vectors under last-token
-# pooling; 256 holds 317 MiB less anonymous memory than 512 once a long input
-# has run, at the same embed latency.
-_N_UBATCH = 256
+# runtime, 128, 256, 512 and 2048 produce byte-identical vectors under
+# last-token pooling. 256 holds 317 MiB less anonymous memory than 512 once a
+# long input has run, at the same embed latency, and 128 halves the compute
+# arena and the output buffer again: 83 MiB less than 256, at no more CPU time.
+_N_UBATCH = 128
 # Safety truncation (chars) before inference, sized under _N_CTX at a
 # conservative ~4 chars/token so a clipped input always fits the context
 # window. Only pathological un-chunked blobs exceed this; mirrors the
@@ -412,3 +413,40 @@ def bulk_pace_delay(elapsed: float) -> float:
     if duty >= 1.0:
         return 0.0
     return min(elapsed * (1.0 - duty) / duty, _MAX_BULK_PACE_SLEEP)
+
+
+# ── Child-process inference ──
+
+# Niceness the inference child runs at. The child serves interactive and bulk
+# work alike, so it is lowered once for the whole process: on a busy host the
+# gateway's event loop wins the CPU, and a query that loses too much time to it
+# reaches its own deadline and degrades to keyword search as it does today.
+_CHILD_NICE = 10
+# A request the child is working on that stays unanswered past this budget
+# (base plus a share per text, so a full 8-text bulk batch on one niced thread
+# fits) means a wedged runtime: the child is killed and respawned. It is checked
+# for every outstanding request, including ones whose caller already gave up at
+# its own deadline (30 s for interactive work), so interactive-only traffic still
+# recovers a wedged child.
+_CHILD_CALL_BASE_SECS = 60.0
+_CHILD_CALL_SECS_PER_TEXT = 30.0
+# How long the loader waits for a fresh child to load the model and say ready.
+_CHILD_LOAD_TIMEOUT_SECS = 300.0
+# Respawn backoff after the child dies: 1, 2, 4, ... seconds, capped.
+_CHILD_RESPAWN_BASE_SECS = 1.0
+_CHILD_RESPAWN_CAP_SECS = 300.0
+# A child must stay up this long before an answered embed resets the backoff, so
+# text that crashes the runtime cannot hold the respawn delay at its minimum.
+_CHILD_STABLE_SECS = 60.0
+
+
+def embedding_child_process_enabled() -> bool:
+    """Whether model load and inference run in a child process (``memory``).
+
+    ``memory.embedding_child_process``, default off: the model runs in-process on
+    the inference thread exactly as before. ``true`` moves it to a child. Read
+    raw like the other knobs here; anything but a literal ``true`` keeps the
+    default. Read at each model load, so the switch takes effect at the next
+    load (gateway restart, or the next load after an idle unload).
+    """
+    return _read_memory_config().get("embedding_child_process") is True

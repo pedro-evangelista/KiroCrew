@@ -32,7 +32,7 @@ from typing import Any, Iterator
 import pytest
 
 from kiro_crew import crew_log as lg
-from kiro_crew.crew_log import CrewLog, bus, eager, emit
+from kiro_crew.crew_log import CrewLog, bus, eager, emit, lease
 from kiro_crew.crew_log import projection as crew_log
 from kiro_crew.crew_log import projection_catalogue, slot_prime
 from kiro_crew.crew_log import store as crew_log_store
@@ -78,6 +78,7 @@ def _isolated(tmp_path, _floor_monkeypatch):
     _reset()
     yield
     _reset()
+    _release_write_leases()
 
 
 def _reset() -> None:
@@ -86,6 +87,26 @@ def _reset() -> None:
     crew_log.forget_session_folds()
     bus.reset_for_tests()
     emit.reset_caches()
+
+
+def _release_write_leases() -> None:
+    """Release any write lease a handle this test created still holds.
+
+    A ``CrewLog`` handle releases its write lease when it is dropped, through the
+    ``weakref.finalize`` the handle arms. A reader that caches handles process-wide
+    (``read.dispatch_view``'s session-tree keeps one per unit it scans) holds some of
+    this test's handles past the test's own frame, so the refcount drop -- and the
+    release that rides it -- waits for a later generational collection. On POSIX that
+    wait is harmless, but the next test on this xdist worker (``test_crew_log_types``)
+    asserts in its teardown that no lease outlived a test, so a lease released only at
+    the next GC reads there as leaked. Releasing them here, where they are created,
+    keeps the boundary clean without a ``gc.collect()`` and without touching the other
+    file's check. The lease release is idempotent, so the handle's own finalizer
+    running later is a no-op.
+    """
+    for key in list(lease._held):
+        while key in lease._held:
+            lease.release(key)
 
 
 # --------------------------------------------------------------------------- #
@@ -317,13 +338,6 @@ def test_a_warm_header_indexed_baseline_reads_only_the_entries_appended_since(me
     assert meter.opens <= UNITS_IN_SLOT + OPEN_SLACK, meter
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="full log walk to resolve the work fold's units on every read: "
-    "projection_readers._slot_units_for_fold -> projection_work._work_units walks "
-    "iter_from(1) of every conductor unit for bind entries; fixed by the work-fold own-units redesign "
-    "(PR pending, supersedes #24285; crew_log/projection_work.py)",
-)
 def test_a_warm_baseline_reads_only_the_entries_appended_since(meter):
     """A second subscriber on a warm board reads what was appended, not the slot."""
     units = _board_slot()
@@ -338,14 +352,6 @@ def test_a_warm_baseline_reads_only_the_entries_appended_since(meter):
     assert meter.hashed <= ENTRY_SLACK, meter
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="full log walk to resolve the workstreams fold's units on every read: "
-    "projection_workstreams._workstreams_units -> _board_closure_units -> "
-    "projection_work._work_units and _workstreams_binds_in walk iter_from(1) of every "
-    "unit for bind entries; fixed by the work-fold own-units redesign "
-    "(PR pending, supersedes #24285; crew_log/projection_workstreams.py)",
-)
 def test_a_warm_workstreams_baseline_reads_only_the_entries_appended_since(meter):
     units = _board_slot()
     _subscribe_baseline("workstreams")
@@ -362,13 +368,6 @@ def test_a_warm_workstreams_baseline_reads_only_the_entries_appended_since(meter
 SAVEPOINT_GAP = 300
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="a warm session fold refolds the whole unit when a savepoint write is earned: "
-    "projection_session_memo._fold_session_warm_locked drops the warm bundle when "
-    "checkpoint.write_is_earned, so fold_session re-reads from seq 1; fixed by the "
-    "session savepoint-write PR (crew_log/projection_session_memo.py)",
-)
 def test_a_warm_session_read_that_earns_a_savepoint_reads_only_the_gap(meter):
     from kiro_crew.crew_log import checkpoint
 
@@ -403,12 +402,6 @@ def test_a_warm_baseline_does_not_list_the_crew_log_root(meter):
     assert meter.root_listings == 0, meter
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="O(N) state copies on a cold prime: ProjectionRegistry.prime drives "
-    "_SlotFold.apply, which deep-copies the state once per entry; fixed by #24261 "
-    "(crew_log/projection_slot_memo.py prime / projection_registry.py)",
-)
 def test_a_cold_prime_copies_the_fold_state_a_fixed_number_of_times(meter):
     """The one allowed cold fold folds onto one state; it does not copy it per entry.
 
@@ -511,12 +504,6 @@ def test_an_eager_advance_on_a_log_without_a_cut_counter_reads_only_the_new_entr
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="session tree reads up to TREE_UNIT_CAP units per request: "
-    "SessionTree._records_with_fault -> store_units.unit_dirs(limit=4096); "
-    "issue #24253",
-)
 def test_a_dispatch_view_for_one_unit_reads_a_fixed_number_of_units(meter, monkeypatch):
     from kiro_crew.crew_log.read import dispatch_view
 
@@ -599,12 +586,6 @@ def ws_harness(tmp_path, monkeypatch):
     loop.close()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="full scan on WS connect: dashboard/ws.py _fold_durable folds every unit of "
-    "every open slot (crew_log_panel_units / backfill_legacy_panel_dismissals / "
-    "read_fold_subagent_records); fixed by #24268 (dashboard/ws.py)",
-)
 def test_a_ws_connect_does_not_fold_every_open_slot(meter, ws_harness):
     _other_slots()
 
@@ -616,12 +597,6 @@ def test_a_ws_connect_does_not_fold_every_open_slot(meter, ws_harness):
     assert meter.entries + meter.hashed <= ENTRY_SLACK, meter
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="full scan on WS reconnect: dashboard/ws.py _fold_durable re-opens every unit "
-    "of every open slot and re-hashes each unit's prefix on resume; fixed by #24268 "
-    "(dashboard/ws.py)",
-)
 def test_a_ws_reconnect_with_nothing_new_reads_a_fixed_number_of_entries(meter, ws_harness):
     _other_slots()
 
@@ -640,11 +615,6 @@ def test_a_ws_reconnect_with_nothing_new_reads_a_fixed_number_of_entries(meter, 
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="first history page read in a process frames the whole transcript: "
-    "history_projection_reads._row_index has no persisted index; issue #24254",
-)
 def test_a_first_history_page_in_a_new_process_reads_the_page_not_the_file(tmp_path, monkeypatch):
     from kiro_crew import history, history_projection
     from kiro_crew.history import ConversationLog
@@ -684,14 +654,11 @@ def test_a_first_history_page_in_a_new_process_reads_the_page_not_the_file(tmp_p
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="GET /api/memory/graph reads the whole semantic table: "
-    "memory_graph._build_memory_graph calls get_all_semantic() with no limit; "
-    "issue #24255",
-)
 def test_the_memory_graph_reads_a_bounded_number_of_semantic_rows(tmp_path):
-    from kiro_crew.dashboard.handlers.memory_graph import _build_memory_graph
+    from kiro_crew.dashboard.handlers.memory_graph import (
+        GRAPH_SEMANTIC_LIMIT,
+        _build_memory_graph,
+    )
     from kiro_crew.vector_memory import VectorMemoryStore
 
     store = VectorMemoryStore(db_path=tmp_path / "guard-vm.db")
@@ -718,7 +685,8 @@ def test_the_memory_graph_reads_a_bounded_number_of_semantic_rows(tmp_path):
             vector_store=store,
         )
         _build_memory_graph(mem, [])
-        assert fetched["rows"] <= 200, fetched
+        # The cap plus the one row read past it to tell a partial graph; a constant.
+        assert fetched["rows"] <= GRAPH_SEMANTIC_LIMIT + 1, fetched
     finally:
         close = getattr(store, "close", None)
         if callable(close):

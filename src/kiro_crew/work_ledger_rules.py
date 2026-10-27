@@ -34,6 +34,12 @@ from kiro_crew.work_ledger_records import (
     WorkItem,
     WorkLedgerError,
     _finite_int,
+    logger,
+)
+from kiro_crew.work_vocab import (
+    WORK_MAX_DEPTH_MAX,
+    WORK_MAX_DEPTH_MIN,
+    WORK_MAX_DEPTH_SETTING,
 )
 
 # --------------------------------------------------------------------------- #
@@ -172,15 +178,77 @@ def _require_count(value: Any, name: str) -> int:
 # --------------------------------------------------------------------------- #
 
 
+#: The fallback reasons already warned about. ``max_depth`` runs on every ledger guard,
+#: so an unreadable config would otherwise log the same line on each call; one warning
+#: per distinct reason is enough for an operator to find it.
+_WARNED_DEPTH_FALLBACKS: set[str] = set()
+
+
+def _warn_depth_fallback(exc: BaseException) -> None:
+    """Say, once per reason, that the configured cap could not be read.
+
+    Without this an operator who set ``work_ledger.max_depth`` to 3 sees
+    ``depth_exceeded`` at level 2 and nothing in the log. The warning names the value
+    found in the config file (best effort) and the default now in force.
+    """
+    reason = f"{type(exc).__name__}: {exc}"
+    if reason in _WARNED_DEPTH_FALLBACKS:
+        return
+    _WARNED_DEPTH_FALLBACKS.add(reason)
+    configured: object = "<unreadable>"
+    try:
+        from kiro_crew.config.loader import _raw_config
+
+        section = _raw_config().get("work_ledger")
+        configured = section.get("max_depth", "<unset>") if isinstance(section, dict) else "<unset>"
+    except Exception:  # noqa: BLE001 -- the warning must not raise
+        pass
+    logger.warning(
+        "work ledger: could not read %s from config (%s); configured value %r, "
+        "using the default depth cap %d",
+        WORK_MAX_DEPTH_SETTING,
+        reason,
+        configured,
+        MAX_DEPTH,
+    )
+
+
+def max_depth() -> int:
+    """The conducting depth cap in force: the ``work_ledger.max_depth`` config value, else 2.
+
+    The config loader holds the value to ``[WORK_MAX_DEPTH_MIN, WORK_MAX_DEPTH_MAX]``: a
+    value outside that range, or not an integer, is refused there with a warning and the
+    default applies, never a clamped value. With nothing set the answer is
+    :data:`MAX_DEPTH`, so nothing changes for an install that sets nothing.
+    Read per call, not at import: the config loader caches by file fingerprint, so a
+    changed setting is seen without a restart.
+    """
+    try:
+        from kiro_crew.config.loader import KiroCrewConfig
+
+        return KiroCrewConfig.load().work_ledger.max_depth
+    except Exception as exc:  # noqa: BLE001 -- a cap is not worth failing a ledger call over
+        _warn_depth_fallback(exc)
+        return MAX_DEPTH
+
+
+def depth_cap_hint() -> str:
+    """The sentence a depth refusal ends with: which setting changes the cap."""
+    return (
+        f"the cap is {max_depth()} levels; raise it with {WORK_MAX_DEPTH_SETTING} "
+        f"(allowed {WORK_MAX_DEPTH_MIN}-{WORK_MAX_DEPTH_MAX})"
+    )
+
+
 def may_conduct(depth: int) -> bool:
     """Whether a session at *depth* may hold a ledger and dispatch from it.
 
-    The one reading of :data:`MAX_DEPTH`. :func:`child_depth`, :func:`ensure_conductor`
-    and :func:`_create_item` all decide through this predicate so that the level a
-    dispatch admits, the level a ledger may open at and the level that may create
-    an item are the same level by construction.
+    The one reading of the cap (:func:`max_depth`). :func:`child_depth`,
+    :func:`ensure_conductor` and :func:`_create_item` all decide through this predicate
+    so that the level a dispatch admits, the level a ledger may open at and the level
+    that may create an item are the same level by construction.
     """
-    return depth < MAX_DEPTH
+    return depth < max_depth()
 
 
 def child_depth(parent_depth: int) -> int:
@@ -197,7 +265,7 @@ def child_depth(parent_depth: int) -> int:
     child = depth + 1
     if not may_conduct(child):
         raise WorkLedgerError(
-            f"depth {depth} is the last conducting level (the cap is {MAX_DEPTH}); "
+            f"depth {depth} is the last conducting level ({depth_cap_hint()}); "
             "this session may not dispatch a conductor",
             code=CODE_DEPTH_EXCEEDED,
             field="depth",

@@ -560,8 +560,10 @@ class DashboardState:
         self._warm_task_brief_not_before: dict[str, float] = {}
         self._warm_task_brief_tasks: dict[str, asyncio.Task[Any]] = {}
         self._warm_task_brief_model_active: set[str] = set()
-        # Threads whose in-flight model call was left behind by a departure.
+        # Threads whose in-flight model call was dropped by a real cancel.
         self._warm_task_brief_abandoned: set[str] = set()
+        # Threads whose brief has posted its opener: leaving keeps the brief.
+        self._warm_task_brief_opened: set[str] = set()
         self._slack_to_slot: dict[str, str] = {}  # Slack session_key → slot name
         # Live OPTIONS controls, keyed by the SESSION KEY that owns them.
         #
@@ -658,7 +660,7 @@ class DashboardState:
         # successful exec replaces this state with the successor process.
         self._gateway_restart_task: asyncio.Task[None] | None = None
         self._gateway_restart_in_progress: bool = False
-        # FIX 2: unattended-turn concurrency cap. Semaphore is created lazily
+        # Unattended-turn concurrency cap. Semaphore is created lazily
         # (see _background_turn_sema) because this object outlives / predates
         # the event loop in some hosts. The counters exist so a queued fleet is
         # observable — see background_turn_stats().
@@ -888,12 +890,13 @@ class DashboardState:
 
     _FLUSH_INTERVAL = 5  # seconds between dirty-slot flushes
 
-    # ── FIX 2: bounded concurrency for unattended, app-owned turns ──────────
-    # Nothing capped chat slots or concurrent turns. The nearest analogue caps
-    # at 12 (dashboard/handlers/terminal_session.py::_MAX_SESSIONS, 429 on excess) and
-    # the only real ceiling was asyncio.Semaphore(4) on agent cold starts plus
-    # host memory — so an app that arms N worker slots could put N turns on the
-    # runtime at once and exhaust it. Shape copied from
+    # ── Bounded concurrency for unattended, app-owned turns ──────────
+    # Without this cap nothing bounds chat slots or concurrent turns. The nearest
+    # analogue caps at 12 (dashboard/handlers/terminal_session.py::_MAX_SESSIONS,
+    # 429 on excess), and the only other ceiling is asyncio.Semaphore(4) on agent
+    # cold starts plus host memory, so an app
+    # that arms N worker slots could put N turns on the runtime at once and
+    # exhaust it. Shape copied from
     # apps/builtins/code_review_sage/sage_lib/review_pool.py (default +
     # ``MAX_CONCURRENT_CEIL`` clamp): configurable, but never unbounded.
     MAX_BACKGROUND_TURNS = 4  # default in-flight unattended turns
@@ -1194,6 +1197,10 @@ class DashboardState:
     broadcast_ws_owners = _slots_push.broadcast_ws_owners
     ws_client_count = _slots_push.ws_client_count
     dashboard_user_ws_count = _slots_push.dashboard_user_ws_count
+    set_fold_delta_capable = _slots_push.set_fold_delta_capable
+    set_fold_watch = _slots_push.set_fold_watch
+    fold_watch_routing = _slots_push.fold_watch_routing
+    add_fold_watch_listener = _slots_push.add_fold_watch_listener
     broadcast_browser_event = _slots_push.broadcast_browser_event
     register_ws = _slots_push.register_ws
     send_members_subscribed = _slots_push.send_members_subscribed

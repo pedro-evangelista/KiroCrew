@@ -209,13 +209,17 @@ export function ChatPanel({ basePath }: { basePath?: string } = {}) {
   // the default must share one storage family or the fallback chain breaks.
   const [busyDefault, setBusyDefaultState] = useState<BusySendMode>(() => readBusySendDefault())
   const setBusyDefault = (m: BusySendMode) => { setBusySendDefault(m); setBusyDefaultState(m) }
-  const budgetInitRef = useRef(false)
-  useEffect(() => {
-    if (mcQ.data && !budgetInitRef.current) {
-      budgetInitRef.current = true
-      setLocalBudget(String(mcQ.data.agent?.soft_stop_budget_secs ?? SOFT_STOP_DEFAULT))
-    }
-  }, [mcQ.data])
+  // The served config seeds the budget row ONCE, in the render that first has
+  // it. Setting state during render is React's shape for state derived from a
+  // value that just arrived: the component re-renders before anything commits,
+  // so the commit that enables the input is the one that shows the stored
+  // number. Seeding from an effect instead commits one frame where the input is
+  // enabled and empty, which a user can see and a test can land on.
+  const [budgetSeeded, setBudgetSeeded] = useState(false)
+  if (mcQ.data && !budgetSeeded) {
+    setBudgetSeeded(true)
+    setLocalBudget(String(mcQ.data.agent?.soft_stop_budget_secs ?? SOFT_STOP_DEFAULT))
+  }
 
   const budgetMut = useMutation({
     mutationFn: (n: number) => api.patchConfig('agent.soft_stop_budget_secs', n),
@@ -223,8 +227,8 @@ export function ChatPanel({ basePath }: { basePath?: string } = {}) {
     onError: () => {
       setSaveError(i18nT('pages.settings.chatPanel.failed_to_save_soft_stop_budget'))
       // Revert the input to the last-known server value so the user isn't
-      // left looking at an unpersisted number. budgetInitRef stays true,
-      // so the init effect will not clobber this on future query updates.
+      // left looking at an unpersisted number. budgetSeeded stays true,
+      // so the render-phase seed will not clobber this on future query updates.
       setLocalBudget(String(mcCfg?.agent?.soft_stop_budget_secs ?? SOFT_STOP_DEFAULT))
     },
   })
@@ -597,7 +601,6 @@ export function ChatPanel({ basePath }: { basePath?: string } = {}) {
 
         <div className="mb-8">
         <h4 className="text-base font-semibold text-text-strong">{i18nT('pages.settings.chatPanel.role_subagents')}</h4>
-        <div className="text-[12px] text-muted mb-1">{i18nT('pages.settings.chatPanel.model_for_spawned_sub_agents')}</div>
         {/* The memory cost of a pin, at the place the pin is chosen: a pinned
             subagent cannot share its parent chat's runtime. */}
         <div className="text-[12px] text-muted mb-1" data-testid="subagent-pin-runtime-cost">

@@ -203,9 +203,10 @@ Copy takes the plain-text `content`; chat search reads the card's own visible
 text, so its count matches what can be highlighted. Only an assistant row draws it: any other
 role carrying the same `meta.kind` (the send route keeps client `meta` keys on
 the user row) draws as its own role. These generated rows
-are excluded from the task fingerprint. A new user turn, the owner leaving,
-slot replacement, reset, close, and a finished task drop a stale result
-unposted. Patrol turns, `[work-ledger wake]` rows, and worker reports change
+are excluded from the task fingerprint. A new user turn, slot replacement,
+reset, close, and a finished task drop a stale result unposted. The owner
+leaving drops the brief only before its opener is posted; after the opener,
+the result still posts as ordinary history while the owner is away. Patrol turns, `[work-ledger wake]` rows, and worker reports change
 the dedup fingerprint but do not make a prepared result stale; a turn running
 at publication defers the result until it ends. Only a live user row the person
 typed cancels a brief in preparation; assistant rows, automation rows and turn

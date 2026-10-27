@@ -804,7 +804,7 @@ _IDENTITY_GATED_APPROVAL_CALLERS = Counter(
         ("channel.py", "_stream_task"): 4,
         ("cli_chat.py", "_answer_permission"): 1,
         ("dashboard/chat_turn/permission_prompt.py", "_on_permission_prompt"): 1,
-        ("dashboard/chat_turn/tool_approval.py", "_on_permission_request"): 6,
+        ("dashboard/chat_turn/tool_approval.py", "_decide_permission_request"): 6,
         ("dashboard/handlers/hooks.py", "_run_hook_inner"): 1,
         ("eval/runner.py", "_run_turn"): 2,
         ("llm_helpers_parts/tool_approval.py", "_resolve_permission"): 2,

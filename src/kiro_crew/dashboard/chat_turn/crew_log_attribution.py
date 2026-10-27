@@ -471,8 +471,8 @@ async def _turn_close_crew_log(turn: _ChatTurn) -> None:
         )
         _crew_log_turn_open = False
         turn._crew_log_turn_open = _crew_log_turn_open
-    # Poisoned-conversation streak break — run from _run_chat's FINALLY on purpose (fork
-    # GPT review): several recovery paths (stale-turn, tool-stall,
+    # Poisoned-conversation streak break — run from _run_chat's FINALLY on purpose:
+    # several recovery paths (stale-turn, tool-stall,
     # pipe-death) `return` before the main completion block in _turn_persist_and_settle, and a turn
     # with model activity that exits through them must STILL break the
     # exhaustion streak — the backend demonstrably served this

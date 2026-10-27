@@ -22,6 +22,7 @@ from kiro_crew.crew_log.entry_types import (
     RADAR_ENTRY_TYPE,
     WAITING_ENTRY_TYPE,
     WAITING_FOLD_NAME,
+    WORK_CHARGE_ENTRY_TYPE,
     WORK_ENTRY_TYPE,
 )
 from kiro_crew.crew_log.projection_catalogue import (
@@ -232,7 +233,7 @@ TOOL_TYPES: Final[frozenset[str]] = frozenset({"tool/called", "tool/completed"})
 #: fourth spender added to :data:`_CREDIT_SOURCE_OF` is then read by the report fold
 #: without a second edit, which is the whole point of deriving it.
 WORKSTREAMS_TYPES: Final[frozenset[str]] = frozenset(
-    {WORK_ENTRY_TYPE, "session/opened"} | set(_CREDIT_SOURCE_OF)
+    {WORK_ENTRY_TYPE, WORK_CHARGE_ENTRY_TYPE, "session/opened"} | set(_CREDIT_SOURCE_OF)
 )
 
 #: Entry types ``approvals`` pairs: a request and the decision that answers it.
@@ -703,6 +704,8 @@ _FOLDS: Final[dict[str, _Fold]] = {
         _workstreams_render,
         bind_slot=_workstreams_bind_slot,
         affects=WORKSTREAMS_TYPES,
+        # One past the base: ``charged`` joined the state.
+        state_version=_FOLD_STATE_VERSION_BASE + 1,
         copy_state=_workstreams_copy,
         count_rows=_workstreams_rows,
     ),
@@ -839,7 +842,7 @@ if _ORPHAN_EAGER:  # pragma: no cover - import-time
 
 #: A slot-keyed fold is the only kind that gets a warm cell, so it is the only kind the
 #: byte budget charges -- and a charge that cannot see the state's row count is a
-#: CONSTANT, which is what this change exists to stop being. Checked at import because a
+#: CONSTANT, which it must not be. Checked at import because a
 #: fold added without a counter would be silently under-charged forever.
 _UNCOUNTED_SLOT_FOLDS: Final[tuple[str, ...]] = tuple(
     name

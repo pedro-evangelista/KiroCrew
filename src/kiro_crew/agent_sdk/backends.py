@@ -114,6 +114,9 @@ with no row here.
    * - ``ACP_BACKENDS_STEER_CONCURRENT_PROMPT``
      - pre-session registry query (whether a user steer travels as a second
        ``session/prompt`` that joins the running turn)
+   * - ``ACP_BACKENDS_STEER_RETRACT``
+     - driver-internal (whether a pending steer can be taken back with
+       ``_session/steer/clear``)
    * - ``ACP_BACKENDS_COMPACT``
      - pre-session registry query (whether manual ``/compact`` is offered at all)
    * - ``ACP_BACKENDS_INLINE_COMPACTION``
@@ -171,6 +174,9 @@ with no row here.
      - semantic question (``SessionCapabilities.resolves_model_from_advertised_list``)
    * - ``ACP_BACKENDS_SEED_LOCAL_SETTINGS``
      - driver-internal (whether ``settings.local.json`` is re-seeded on switch)
+   * - ``ACP_BACKENDS_AGENT_STARTED_TURNS``
+     - driver-internal (whether ``AcpClient`` reads stdout between turns and hands a
+       turn the agent started on its own to its ``on_agent_turn`` callback)
    * - ``ACP_BACKENDS_KIRO_SLASH_COMMANDS``
      - semantic question (``SessionCapabilities.effort_via_slash_command``), and
        driver-internal everywhere else (whether ``_kiro.dev/commands/execute`` exists)
@@ -897,6 +903,7 @@ from kiro_crew.agent_sdk.backends_sessions import (  # noqa: E402,F401 - re-expo
     ACP_BACKENDS_SESSION_SHARING,
 )
 from kiro_crew.agent_sdk.backends_turns import (  # noqa: E402,F401 - re-exported vocabulary
+    ACP_BACKENDS_AGENT_STARTED_TURNS,
     ACP_BACKENDS_COMPACT,
     ACP_BACKENDS_CONTEXT_RECYCLE,
     ACP_BACKENDS_HARNESS_MANAGED_COMPACTION,
@@ -908,8 +915,11 @@ from kiro_crew.agent_sdk.backends_turns import (  # noqa: E402,F401 - re-exporte
     ACP_BACKENDS_REPORT_USAGE,
     ACP_BACKENDS_STEER,
     ACP_BACKENDS_STEER_CONCURRENT_PROMPT,
+    ACP_BACKENDS_STEER_RETRACT,
     ACP_BACKENDS_STEERING_REQUEST,
     ACP_BACKENDS_STRUCTURED_REFUSAL,
     ACP_BACKENDS_UNATTRIBUTED_TERMINAL_ERROR,
     ACP_BACKENDS_UNMARKED_COMPACTION_PAIR,
+    escape_user_message_markup,
+    wrap_user_message,
 )

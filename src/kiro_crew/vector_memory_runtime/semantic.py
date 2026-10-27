@@ -387,8 +387,21 @@ def log_reject_event(
     store._log_event(code.value, "semantic", key, None, snippet, source)
 
 
+#: The ``semantic_memory`` view's columns on the crew schema, in its order
+#: (``memory_schema.CREW_SCHEMA_SQL``), for a keyed read of the table under it.
+_V1_SEMANTIC_COLUMNS = (
+    "key, value_json, confidence, source, created_at, updated_at, is_deleted, embedding"
+)
+
+
 def get_all_semantic(
-    store: VectorMemoryStore, limit: int | None = None, offset: int = 0, *, q: str = ""
+    store: VectorMemoryStore,
+    limit: int | None = None,
+    offset: int = 0,
+    *,
+    q: str = "",
+    after_key: str | None = None,
+    exclude_lessons: bool = False,
 ) -> list[dict]:
     """Get active semantic memory entries.
 
@@ -400,17 +413,45 @@ def get_all_semantic(
 
     Optional ``q`` matches literal Unicode text in keys and decoded values
     before pagination. Omitting it keeps the existing unfiltered read path.
+
+    ``after_key`` returns only rows whose key sorts after it, so a caller can
+    walk the table in key order one bounded page at a time (keyset paging).
+    ``exclude_lessons`` leaves out ``lesson.*`` rows, for a reader that draws
+    lessons from :func:`get_lessons` and would otherwise spend its window on
+    them. Either one asks for a read in KEY-INDEX order: the liveness and kind
+    tests are written ``+is_deleted`` / ``+kind`` so SQLite walks the unique key
+    index and stops at ``limit``, instead of collecting every live row through
+    the ``is_deleted`` or ``kind`` index and sorting them all to keep a page
+    The rows and their order are the same either way.
     """
     query = _text_scoring._normalize_memory_search_query(q)
-    sql = "SELECT * FROM semantic_memory WHERE is_deleted = 0"
-    if store.algorithm_version == "v2":
+    keyed = after_key is not None or exclude_lessons
+    live = "+is_deleted = 0" if keyed else "is_deleted = 0"
+    sql = f"SELECT * FROM semantic_memory WHERE {live}"
+    if keyed and store.algorithm_version != "v2" and store._sem_rel != "semantic_memory":
+        # A v1 store on the crew schema reads ``semantic_memory`` as a VIEW over
+        # ``memory_items`` whose ``kind IN (...)`` test steers the plan onto the kind
+        # index. Read the table itself, in the view's columns, with that test unindexed.
+        sql = (
+            f"SELECT {_V1_SEMANTIC_COLUMNS} FROM {store._sem_rel} WHERE {live}{store._sem_guard}"
+        ).replace(" AND kind ", " AND +kind ")
+    elif store.algorithm_version == "v2":
         # Compatibility views intentionally omit facets. Private lifecycle readers
         # need the canonical row so an explicit copy keeps its visible provenance.
-        sql = f"SELECT * FROM {store._sem_rel} WHERE is_deleted = 0" f"{store._sem_guard}"
+        sql = f"SELECT * FROM {store._sem_rel} WHERE {live}{store._sem_guard}"
+        if keyed:
+            # The kind guard is an IN test too, and would steer the plan onto the
+            # kind index the same way the liveness test does.
+            sql = sql.replace(" AND kind ", " AND +kind ")
     params: tuple = ()
     if query:
         sql += " AND (memory_text_contains(key, ?, 0) OR memory_text_contains(value_json, ?, 1))"
         params = (query, query)
+    if exclude_lessons:
+        sql += " AND key NOT LIKE 'lesson.%'"
+    if after_key is not None:
+        sql += " AND key > ?"
+        params += (after_key,)
     sql += " ORDER BY key"
     if limit is not None:
         sql += " LIMIT ? OFFSET ?"
@@ -777,8 +818,8 @@ def delete_semantic(
         # A forget writes its audit event best-effort AFTER committing the
         # tombstone, through the shared helper -- an unavailable event table
         # must not fail a forget. Only the supersede branch inlines the INSERT
-        # inside the transaction, where losing the winner/reason is the data
-        # loss this change exists to prevent.
+        # inside the transaction, where losing the winner/reason is data
+        # loss.
         store._log_event("delete", "semantic", key, row["value_json"], new_value, source)
     return True
 

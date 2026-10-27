@@ -488,7 +488,6 @@ class TestApiSecretsSet:
                 data = await resp.json()
                 assert data["ok"] is True
 
-                # Verify stored
                 vault = SecretVault(tmp_path)
                 assert vault.get("NEW_KEY").reveal() == "new-value"
 

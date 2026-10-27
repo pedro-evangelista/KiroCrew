@@ -41,7 +41,7 @@ import { subscribeNativeNavigate, useMacFullscreen } from './platform/electronBr
 import { useNativeHistoryStep } from './platform/nativeHistoryStep'
 import AppIcon from '../components/AppIcon'
 import { useUpdateFlow } from './updates/updateFlow'
-import { useUpdateSubscription } from '../hooks/useUpdateSubscription'
+import { useUpdateSubscription, usePolicyGovernedNotification } from '../hooks/useUpdateSubscription'
 import { useBottomTerminalOpen, useTerminalPosition } from '../hooks/useBottomTerminal'
 import { useTerminalRestoreProbe } from './boot/terminalRestore'
 import { useTerminalPoppedOut } from '../utils/terminalPopout'
@@ -321,6 +321,9 @@ export function useAppShell() {
   // Capture Electron update lifecycle events app-wide so UpdateModal fires on
   // any page, not just after the user has opened Settings > About.
   useUpdateSubscription()
+  // Notify the main process whenever the gateway status reports a security
+  // policy provider governs this install's updates, so the feed lane stands down.
+  usePolicyGovernedNotification()
   const { branding, botName, avatar } = useShellBranding({ colorTheme, brandName, brandLogo, brandFavicon })
   useRumPageView()
   useNotificationSound()

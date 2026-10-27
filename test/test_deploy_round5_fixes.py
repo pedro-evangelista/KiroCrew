@@ -219,7 +219,6 @@ class TestReaperOACPending:
         mock_s3.delete_object = MagicMock()
         mock_s3.put_object = MagicMock()
 
-        # Patch the module globals
         with patch.object(self.mod, "cf", mock_cf), \
              patch.object(self.mod, "s3", mock_s3), \
              patch.object(self.mod, "botocore") as mock_bc:

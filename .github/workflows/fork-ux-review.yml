@@ -69,7 +69,11 @@ concurrency:
 jobs:
   fork-ux-review:
     name: Fork UX Review
-    runs-on: ubuntu-latest
+    # `kirocrew-runners` larger-runner group, targeted by GROUP not label; see
+    # "Larger runners for the review lanes and CodeQL" in
+    # docs/ci/ci-and-reviews.md.
+    runs-on:
+      group: kirocrew-runners
     timeout-minutes: 30
     # Only for a SUCCESSFUL Stage 1 run that was itself a fork pull_request.
     if: >-
@@ -895,6 +899,11 @@ jobs:
                - Redundancy effect: icon + label + tooltip all restating the
                  same words is a violation (delete the restatement), as is
                  helper text paraphrasing its label.
+               - Avoid unnecessary secondary labels and descriptions. Let the
+                 layout do the explaining. A subtitle, menu-row description,
+                 caption, helper line or tooltip the diff ADDS or CHANGES is a
+                 finding when the label, icon, heading or placement already
+                 says it; quote the line and name what already says it.
                - Errors: what happened + what to do next, ≤2 sentences, in the
                  user's vocabulary — never raw codes, exception text, or a bare
                  "Something went wrong".
@@ -972,6 +981,29 @@ jobs:
                  in components/appstore/gradient.ts, the session 'gradient'
                  color mode) — the rule is documented in
                  website/docs/theming-contract.md.
+               - Scrollbars: none is visible at rest, on any surface, for any
+                 pointer (recorded maintainer decision,
+                 docs/decisions/2026-10-23-scrollbars-are-never-always-visible.md;
+                 the global rule lives in website/src/index.css). A scroll box
+                 either hides its scrollbar entirely (`scrollbar-none`) or shows
+                 a thin thumb only while it is being scrolled (`data-scrolling`,
+                 set by lib/scrollReveal.ts), in a column it reserves anyway so
+                 the reveal moves no content. A diff that paints one at rest is a
+                 finding: a coloured `::-webkit-scrollbar-thumb` or
+                 `scrollbar-color` whose selector lacks `[data-scrolling]`,
+                 `scrollbar-width: auto`, a hover-revealed thumb (the pointer
+                 lives over the chat transcript, so hover is "at rest" there), a
+                 revived `.scrollbar-overlay` / `.scroll-fade`, or a screenshot
+                 of a dashboard surface showing a scrollbar while nothing
+                 scrolls. A reveal that changes the box's width (a scrollbar
+                 that appears and pushes content) is a finding too. "The box
+                 needs a scroll affordance" is not an exception: the cue for a
+                 box whose edge does not show that it scrolls is an edge fade
+                 (`.edge-fade-x`, `useScrollEdges`) or a "more below"
+                 affordance (`MORE_BELOW_MASK`, `JumpToBottomButton`), never a
+                 resting thumb. Hiding one is never a regression to flag; the
+                 decision outranks the report (AUTOSDE
+                 `recorded-decisions-are-not-regressions`).
                - Habituation: flag diffs that MOVE or REORDER existing controls
                  without functional need (breaks muscle memory), and duplicate
                  new paths to an already-reachable action.

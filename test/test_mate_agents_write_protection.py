@@ -71,7 +71,44 @@ def test_reads_stay_allowed(home: Path) -> None:
 
 def test_neighbours_are_not_over_blocked(home: Path) -> None:
     assert is_sensitive_write_path("~/.kiro/mates/agents-backup/x.json") is False
+    assert is_sensitive_write_path("~/.kiro/mates/notes.json") is False
     assert is_sensitive_write_path("~/notes.txt") is False
+
+
+def _state_files() -> list[Path]:
+    from kiro_crew import mate_approval_revocations, mate_config, mate_tool_access
+    from kiro_crew.mate_config_migration import _ledger_path
+    from kiro_crew.mate_worker_kit import kit_record_path
+
+    return [
+        mate_config._owners_path(),
+        kit_record_path("ada"),
+        mate_approval_revocations._path(),
+        mate_tool_access._path(),
+        _ledger_path(),
+    ]
+
+
+def test_state_literals_match_the_writers(home: Path) -> None:
+    # Drift guard: each writer's file sits under one write-tier entry.
+    tails = {f.relative_to(home).as_posix() for f in _state_files()}
+    tails = {t.rsplit("/", 1)[0] if "/kits/" in t else t for t in tails}
+    assert tails == set(security.paths._KIRO_MATE_STATE_LEAVES)
+
+
+def test_file_edit_writes_to_the_state_files_are_refused(
+    home: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    for target in _state_files():
+        assert is_sensitive_write_path(str(target)) is True, target
+        assert is_sensitive_path(str(target)) is False, target
+        assert _edit(str(target)).action == TOOL_DENY, target
+    assert is_sensitive_write_path("~/.kiro/mates/kits") is True
+    moved = tmp_path / "elsewhere"
+    monkeypatch.setenv("KIRO_HOME", str(moved))
+    for target in _state_files():
+        assert str(target).startswith(str(moved)), target
+        assert is_sensitive_write_path(str(target)) is True, target
 
 
 def test_the_gateway_writer_still_writes_the_folder(

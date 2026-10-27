@@ -188,10 +188,11 @@ const SPRING = { type: 'spring' as const, stiffness: 400, damping: 30 }
  *  ordinary edit would glue the markers together and the queue edit's
  *  whitespace-bounded marker match would prune every attachment but the last.
  *  Enter commits (the composer's own contract); Shift+Enter inserts a line. */
-function EditInput({ initial, onCommit, onCancel }: {
+function EditInput({ initial, onCommit, onCancel, onDraftChange }: {
   initial: string
   onCommit: (value: string) => void
   onCancel: () => void
+  onDraftChange?: (value: string | undefined) => void
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
   const ime = useImeGuard()
@@ -209,6 +210,14 @@ function EditInput({ initial, onCommit, onCancel }: {
     const nl = initial.indexOf('\n')
     el.setSelectionRange(0, nl === -1 ? initial.length : nl)
   }, [initial])
+  const currentDraftRef = useRef(initial)
+  currentDraftRef.current = value
+  // A close can unmount this local state before blur or Save commits it. Keep
+  // the side surface's optional owner current, and retire the copy on every exit.
+  useEffect(() => {
+    onDraftChange?.(currentDraftRef.current)
+    return () => onDraftChange?.(undefined)
+  }, [initial, onDraftChange])
   // Lines below the visible one, surfaced as a count so the hidden part of
   // the value is never a surprise. When every hidden line is an attachment
   // marker (the serializer's `[attached_file N] path` / `[attached_dir N]
@@ -240,7 +249,11 @@ function EditInput({ initial, onCommit, onCancel }: {
         // the same line the card does. The value keeps every newline; the
         // textarea scrolls to the caret as the user moves through the lines.
         rows={1}
-        onChange={e => setValue(e.target.value)}
+        onChange={e => {
+          setValue(e.target.value)
+          currentDraftRef.current = e.target.value
+          onDraftChange?.(e.target.value)
+        }}
         // Stop the card's expand/collapse + drag handlers from swallowing pointer + key events.
         onPointerDown={e => e.stopPropagation()}
         onClick={e => e.stopPropagation()}
@@ -273,11 +286,12 @@ function EditInput({ initial, onCommit, onCancel }: {
   )
 }
 
-function QueueStackInner({ messages, onCancel, onInterrupt, onEdit, onReorder, fuseBelow = true, pendingIds }: {
+function QueueStackInner({ messages, onCancel, onInterrupt, onEdit, onEditDraft, onReorder, fuseBelow = true, pendingIds }: {
   messages: ChatMessage[]
   onCancel?: (queueId: string) => void
   onInterrupt?: (queueId: string) => void
   onEdit?: (queueId: string, content: string) => void
+  onEditDraft?: (queueId: string, content: string | undefined) => void
   /** Move a queued message one step toward the front (`next`) or the back
    *  (`later`) of the run order. Index 0 runs first. */
   onReorder?: (queueId: string, direction: 'next' | 'later') => void
@@ -501,7 +515,17 @@ function QueueStackInner({ messages, onCancel, onInterrupt, onEdit, onReorder, f
                   )}
                   {isEditing && onEdit ? (
                     <>
-                      <EditInput initial={queuedOwnText(m)} onCommit={v => commitEdit(queueId!, reglueQuote(m, v))} onCancel={cancelEdit} />
+                      <EditInput
+                        initial={queuedOwnText(m)}
+                        onCommit={v => commitEdit(queueId!, reglueQuote(m, v))}
+                        onCancel={cancelEdit}
+                        // Blank typed words report no draft, checked before the
+                        // reglue: the card's quote or knowledge envelope would
+                        // otherwise make a cleared editor read as an edit.
+                        onDraftChange={onEditDraft
+                          ? value => onEditDraft(queueId!, value === undefined || !value.trim() ? undefined : reglueQuote(m, value))
+                          : undefined}
+                      />
                       {/* Kept beside the edit box: the editor holds only the
                           typed words, and the chip says the knowledge stays
                           with the send after the save. */}
@@ -618,5 +642,6 @@ export default memo(QueueStackInner, (prev, next) =>
   prev.onCancel === next.onCancel &&
   prev.onInterrupt === next.onInterrupt &&
   prev.onEdit === next.onEdit &&
+  prev.onEditDraft === next.onEditDraft &&
   prev.onReorder === next.onReorder
 )

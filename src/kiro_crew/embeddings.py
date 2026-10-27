@@ -111,6 +111,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         LlamaCppEmbedder,
         _caller_may_wait_for_load,
         _chars_bucket,
+        _construct_llama,
         _emit_embed_timing,
         _free_llama,
         _InferJob,
@@ -170,6 +171,13 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         verify_vendored_libs,
     )
     from kiro_crew.embeddings_settings import (  # noqa: F401
+        _CHILD_CALL_BASE_SECS,
+        _CHILD_CALL_SECS_PER_TEXT,
+        _CHILD_LOAD_TIMEOUT_SECS,
+        _CHILD_NICE,
+        _CHILD_RESPAWN_BASE_SECS,
+        _CHILD_RESPAWN_CAP_SECS,
+        _CHILD_STABLE_SECS,
         _COLD_LOAD_WAIT_SECS,
         _DEFAULT_BULK_DUTY,
         _DEFAULT_BULK_THREADS,
@@ -220,6 +228,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         bulk_duty_cycle,
         bulk_embed_threads,
         bulk_pace_delay,
+        embedding_child_process_enabled,
         embedding_idle_evict_secs,
         embedding_work,
     )
@@ -285,6 +294,10 @@ if TYPE_CHECKING:  # names it serves from outside the family, from their homes
     )
     from kiro_crew.cpu_affinity import (  # noqa: F401
         affinity_cpu_count,
+    )
+    from kiro_crew.embeddings_child import (  # noqa: F401
+        ChildLlama,
+        is_vendored_llama_class,
     )
     from kiro_crew.metrics.provider import (  # noqa: F401
         get_recorder,

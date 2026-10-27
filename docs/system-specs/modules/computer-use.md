@@ -795,12 +795,12 @@ it would let a planted `~/Applications/Anything.app` be launched by name.
 Then **every directory on the path to the code that will run is probed for writability**
 (`_writable_component`): the bundle's parent, the bundle itself, `Contents`, and
 `Contents/MacOS`. The parent alone was not enough, and the gap it left is the common case
-rather than a corner. `/Applications` is root-owned and unwritable, but a bundle installed
-there by any user-space installer — every drag-install, every Homebrew cask — is owned by
-the installing user, so `Foo.app/Contents/MacOS/Foo` can be replaced without
-`/Applications` ever being writable. A parent-only probe passed that bundle and launched
-agent-authored native code. The parent probe still runs, which also catches an
-`/Applications` that is group-writable on a machine whose admin group has been widened.
+rather than a corner. On a stock macOS install `/Applications` is `drwxrwxr-x root admin`, so the parent probe
+fires for every admin user and every bundle dropped there is indistinguishable from one the
+operator installed. The parent probe and the bundle probes are independent: an unwritable
+parent is not evidence of an unwritable bundle. A bundle installed by any user-space
+installer — every drag-install, every Homebrew cask — is owned by the installing user, so
+`Foo.app/Contents/MacOS/Foo` can be replaced without the parent ever being writable.
 
 **Every level, not just the endpoints.** Write access to any single directory on that path
 is enough to control what executes, and `Contents` is the one an endpoints-only check
@@ -880,9 +880,9 @@ judged. `Contents/MacOS` is the location the OS itself requires, and any deeper 
 sits under a directory already being probed.
 
 The cost is real and is the right trade: an application installed only for the current
-user cannot be launched by name. The refusal says so and names the remedy (move the
-bundle under `/Applications`, or open it by hand), which is recoverable — where a launch
-verb that runs whatever the agent wrote is not.
+user cannot be launched by name. The refusal names the reason and tells the user to open
+the application themselves, which is recoverable — where a launch verb that runs whatever
+the agent wrote is not.
 
 A **command interpreter is refused by name** on both platforms (`cmd`, `powershell`,
 `wt`, `Terminal.app`, …). That list is explicitly *not* a security boundary and does
@@ -1472,10 +1472,28 @@ actually doing) appears nowhere.
 
 Two smaller findings encoded the same way: **the advertised action list lies** —
 an `AXScrollArea` advertising `AXScrollDownByPage` returned
-`-25205 (kAXErrorActionUnsupported)`, so `scroll` attempts the AX action, checks
-the error code, and falls back to `CGEventCreateScrollWheelEvent` posted with
-`CGEventPostToPid`; and **the tree walk is ITERATIVE** (an explicit stack), so a
-pathological deep tree cannot `RecursionError` inside ctypes.
+`-25205 (kAXErrorActionUnsupported)`, so `scroll` attempts the AX action and
+checks the error code; and **the tree walk is ITERATIVE** (an explicit stack), so
+a pathological deep tree cannot `RecursionError` inside ctypes.
+
+**When the AX scroll action is refused, `scroll` goes through the scroll bar.**
+The fallback chain, in order:
+
+| Step | Taken when | Result text |
+|---|---|---|
+| `AXScrollDownByPage` and siblings on the element | always first | `scrolled element N ...` |
+| Press the bar's page area (`AXButton` with subrole `AXIncrementPage` / `AXDecrementPage`) once per page | the element, or one of up to three ancestors, names an `AXVerticalScrollBar` / `AXHorizontalScrollBar` that has the page area | `scrolled element N down K of P page(s) with its scroll bar` plus the bar's `AXValue` before and after |
+| No press | the bar is disabled (`AXEnabled` false: the content fits) | refused: nothing to scroll |
+| No press | the bar's `AXValue` is already at the requested end | `already at the bottom` |
+| `CGEventCreateScrollWheelEvent` posted with `CGEventPostToPid`, located at the element's centre | no bar or page area, a press refused, or a press that moved nothing | `sent a ... wheel scroll ... not confirmed`; refused outright when the element has no frame |
+
+A page-area press animates the scroll, so the bar's `AXValue` still reads the old
+position right after the press: on TextEdit it read `1.0` at once, `0.85` after
+50 ms and `0.0` after 250 ms. Each press is therefore followed by polling until
+the position has moved and two reads agree, for at most 20 x 50 ms. The wheel
+event is last because nothing confirms it: a pid-targeted wheel event is routed
+by the app to the view under the event's location, and TextEdit dropped one aimed
+at its own scroll area while the window was not under the pointer.
 
 **Secure fields are a subrole, not a role.** A real macOS password box reports:
 

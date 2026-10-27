@@ -105,6 +105,8 @@ _WAKE_TYPES: Final[frozenset[str]] = frozenset(
     {
         _CLOSED_TYPE,
         "work/recorded",
+        # The project report reads the charges the gateway relays into a board's log.
+        "work/charged",
         "panel/published",
         "ledger/recorded",
         "radar/recorded",
@@ -151,9 +153,9 @@ class _Wake(NamedTuple):
     ``board`` is the slot whose fold this entry belongs to, and it has to be carried
     rather than derived. A unit's HEADER names the slot that unit ran under, which for a
     conductor's own entry is the board -- but a worker's ``work/recorded`` names the
-    CONDUCTOR's board in its own ``slot`` field and reaches that fold only by joining it
-    (``_work_units``). Resolving the header instead advances the worker's own board and
-    leaves the conductor's -- the one a dashboard reads -- exactly as stale as before. The
+    CONDUCTOR's board in its own ``slot`` field, and the gateway writes the board's own
+    copy of it into the conductor's unit. Resolving the header for the worker's copy
+    would advance the worker's own board rather than the one a dashboard reads. The
     emitter holds the entry, so it is the one place the board is free to read; empty means
     "the unit's header names it", which is true of every type that carries no board of its
     own.
@@ -749,6 +751,12 @@ def _fold_batch(
             # unit the slot ran under and throw the result away. Left to the read path,
             # which folds it when a reader asks.
             continue
+        if not _slot_fold_wanted(slot, name):
+            # Nobody subscribes to this cell (the dashboard exporter holds keyed
+            # subscriptions for the boards its tabs watch, and neither
+            # ``conductor_wake`` nor a live page asks for it), so the read and the
+            # render would be for no one. The read path folds it when someone reads.
+            continue
         _advance(slot, name)
     # Every woken unit, once: its session folds share one pass over its one file, and
     # ``status`` and ``class`` read every type, so any wake moves at least one of them.
@@ -756,6 +764,21 @@ def _fold_batch(
         _advance_session(unit_id)
         if closed.get(unit_id, 0) >= seq > 0:
             projection.forget_session_folds(unit_id)
+
+
+def _slot_fold_wanted(slot: str, name: str) -> bool:
+    """Whether a bus subscriber wants *slot*'s *name*; ``True`` unless on-demand mode.
+
+    See :func:`kiro_crew.crew_log.bus.slot_fold_wanted`. Never raises: a failure to
+    ask folds the cell, which is what this path did before it asked.
+    """
+    # boot-path import gate: see this module's docstring and ``_projection``.
+    from kiro_crew.crew_log import bus
+
+    try:
+        return bus.slot_fold_wanted(slot, name)
+    except Exception:  # pragma: no cover - defensive; the bus lookup does not raise
+        return True
 
 
 def _creator_slot(slot: str) -> str:

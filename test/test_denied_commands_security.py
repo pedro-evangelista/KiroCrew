@@ -1098,7 +1098,6 @@ class TestGreedyFragmentUnderConsume:
 
         pattern = r"rm .+.*--no-preserve-root"
         target = "rm x--no-preserve-root"
-        # Confirm the real engine matches.
         assert re.search(pattern, target, re.IGNORECASE) is not None
         m = _DenyMatcher(pattern)
         assert m._disabled is False
@@ -1504,7 +1503,7 @@ class TestIsDeniedReDoSResistance:
         assert is_denied(needle) is not None
 
     def test_padded_single_segment_needle_not_bypassed(self):
-        # NO-TRUNCATION-BYPASS GUARD (review finding A): a destructive needle
+        # NO-TRUNCATION-BYPASS GUARD: a destructive needle
         # hidden behind a >2KB prefix WITHIN A SINGLE shell segment (no
         # ``;``/``&&``/``|`` separator) must still be denied — a length-bounded
         # scan window would have let these bypass. Also must stay fast.

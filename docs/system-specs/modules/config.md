@@ -50,7 +50,7 @@ the test trees patch through the loader to reaching every owner that binds it.
 | `config/sections_stt.py`, `config/sections_decisions.py`, `config/sections_telemetry.py` | Speech-to-text and its degradation rules; `decisions`; `telemetry` and `wakatime`. |
 | `config/memory_sections.py` | `memory`, `knowledge`, `skills`, `session_summary` and the named `memory_stores` records. |
 | `config/integration_sections.py` | `mcp`, `mcp_gateway` (with the MCP stub roster readers the gateway seed shares), `instances`, `tunnel`, `publish`, `computer_use`, `aws` and the external app `registries`. |
-| `config/service_sections.py` | `taskrunner`, `messaging`, `cron_history`, `monitoring`, `heartbeat` and `watchdog`. |
+| `config/service_sections.py` | `taskrunner`, `messaging`, `cron_history`, `monitoring`, `heartbeat`, `watchdog` and `work_ledger`. |
 | `config/section_builders.py` | The `_build_*` helper of 27 sections, grouped by the module that owns each section's DTO. Each reads its section through `sections.SectionReader`, so an omitted key builds the DTO field's default and a `read()` coercer falls back to it; the values a builder keeps of its own and the deliberate departures are listed under "Defaults come from the DTO fields". Four `_build_*` helpers stay in the loader (agent, session, telemetry, dashboard). Sections with no helper are built inline in the loader's `build_config` (`heartbeat`, the external app `registries`, `memory_stores`, the `agents` crew roster, `workspaces`) or by their DTO (`DecisionsConfig.from_raw`, `ResourceLimitsConfig.from_raw`, `ChannelConfig.from_dict` for `slack_channels`). |
 | `config/migration.py` | The write-back migration ids, the document transform `apply_document_migrations`, the one-shot `connections_ui` marker name, the legacy `skills.lazy_load` cohort test, superseded-default reporting, and the in-memory half of an adoption. |
 | `config/resolution.py` | Raw overlay merging, top-level section classification, and degraded-input tracking. |
@@ -385,7 +385,13 @@ Each session/task gets an isolated subdirectory under this root via `_session_wo
 - Chat sessions: `kirocrew-workspace/cli_chat`, `kirocrew-workspace/{thread_ts}`
 - Background: `kirocrew-workspace/_bg`
 - Cron: `kirocrew-workspace/cron_{job_id}`
-- TaskRunner: `kirocrew-workspace/taskrunner_main`
+- TaskRunner: the session key `taskrunner:main`. Both `TaskRunner` constructions
+  (`cli_server.py` and the gateway boot) pass `_session_work_dir("taskrunner:main")`,
+  and `_safe_dir_name` turns the colon into an underscore, so the folder on disk is
+  kirocrew-workspace/taskrunner_main. It holds `runs.json` and one subdirectory per
+  run: `<spec stem>` for a spec run, `plan_<task_id>` for a planned one. Setting
+  `taskrunner.workspace_dir` moves all of it into that folder, and a run started
+  with its own `workspace_dir` works there directly; see [taskrunner](taskrunner.md).
 - One-run directories for a subagent and a stateless cron run:
   `kirocrew-workspace/subagent_<id>` and `kirocrew-workspace/cron_<job>_<run>`
   (`session_work_dir._DERIVED_SESSION_SHAPES`). These carry a provenance marker and
@@ -3601,13 +3607,14 @@ read by more than one enforcement mechanism, and two of those keys mean
 | `max_cpu_percent` | — | `CPUQuota`, opt-in: unset emits no property | — |
 | `max_total_memory_mb` | — | slice `MemoryMax` (all trees together) | — |
 | `max_total_processes` | — | slice `TasksMax` | — |
+| `scope_memory_high_pct` | — | per-scope `MemoryHigh` as % of `MemoryMax`, 1..100; unset = 90; `0` = emit none | — |
 | `xdist_auto_cap` | — | — | `-1` auto, `0` off, `N` fixed |
 
 On Windows a fourth mechanism applies: a Job object attached to each agent spawn
 (`sandbox.apply_windows_resource_ceiling`) enforces only `max_processes`
 (`ActiveProcessLimit`) and `max_memory_mb` (`JobMemoryLimit`). The other keys
 (`cpu_weight`, `max_cpu_percent`, `max_cpu_seconds`, `max_open_files`,
-`max_total_memory_mb`, `max_total_processes`) are accepted but not enforced there,
+`max_total_memory_mb`, `max_total_processes`, `scope_memory_high_pct`) are accepted but not enforced there,
 and one warning names the ones that are set
 (`sandbox._WINDOWS_INERT_RESOURCE_LIMIT_KEYS`).
 

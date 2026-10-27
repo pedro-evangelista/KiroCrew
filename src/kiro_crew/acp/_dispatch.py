@@ -538,6 +538,7 @@ def classify_notification(msg: JsonRpcMessage) -> str:
             "steering_cleared",
             "AgentExecutionUserMessageQueued",
             "AgentExecutionSteeringInjected",
+            "AgentExecutionUserMessageCleared",
         ):
             return "steer"
     if msg.is_method(METHOD_SESSION_UPDATE):

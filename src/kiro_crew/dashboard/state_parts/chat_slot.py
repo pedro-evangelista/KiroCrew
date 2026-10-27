@@ -36,6 +36,7 @@ from kiro_crew.security.credential_sources import CredentialEvidence
 if TYPE_CHECKING:
     from kiro_crew.dashboard.git_repo_touches import TouchCandidates
     from kiro_crew.dashboard.state_parts.dashboard_state import DashboardState
+    from kiro_crew.dashboard.steer_retract import SteerClear, SteerRetract
     from kiro_crew.subagent import SubagentDelivery
     from kiro_crew.trust_patterns import GrantDeadline
 
@@ -287,6 +288,7 @@ class _ChatSlot:
         "_git_repo_walk_pending",
         "_git_repo_walk_task",
         "_turn_reply_mids",
+        "_file_changes_flush",
         "linked_session_key",
         # Relay-archive marker: an older build ran this slot's turns on a peer
         # crew. See ``dashboard/relay_archive.py``.
@@ -302,6 +304,7 @@ class _ChatSlot:
         "_last_turn_awaiting_permission",
         "_last_turn_children_announced",
         "_steer_segment_cut",
+        "_owed_segment_cut",
         "_native_subagent_tracker",
         "_native_subagent_output",
         "_steer_confirmed",
@@ -317,6 +320,8 @@ class _ChatSlot:
         "_steer_decision_strips",
         "_steer_possibly_delivered",
         "_steer_rpc_in_flight",
+        "_steer_retract",
+        "_steer_clear",
         "_steer_audience_fences",
         "_steer_audience_fence_holders",
         "_steer_attachment_meta",
@@ -509,6 +514,7 @@ class _ChatSlot:
     _git_repo_walk_pending: list[str]
     _git_repo_walk_task: asyncio.Task[None] | None
     _turn_reply_mids: list[str]
+    _file_changes_flush: asyncio.Future[None] | None
     linked_session_key: str
     _active_turn_session_key: str
     _responsive: Any
@@ -572,6 +578,7 @@ class _ChatSlot:
     _compaction_fail_streak: int
     _compaction_fail_cooldown_until: float
     _steer_segment_cut: Callable[[], None] | None
+    _owed_segment_cut: Callable[[], None] | None
     _native_subagent_tracker: dict[str, dict[str, Any]]
     _native_subagent_output: dict[str, list[str]]
     _steer_confirmed: set[str]
@@ -587,6 +594,8 @@ class _ChatSlot:
     _steer_decision_strips: dict[str, dict]
     _steer_possibly_delivered: set[str]
     _steer_rpc_in_flight: set[str]
+    _steer_retract: SteerRetract | None
+    _steer_clear: SteerClear | None
     _steer_audience_fences: dict[str, dict]
     _steer_audience_fence_holders: dict[str, int]
     _steer_attachment_meta: dict[str, dict[str, Any]]

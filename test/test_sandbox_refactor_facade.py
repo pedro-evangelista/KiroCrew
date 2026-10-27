@@ -294,12 +294,14 @@ _MOVED: dict[str, tuple[str, ...]] = {
         _stat_identity _cgroup_scope_session_fingerprint _user_bus_reachable
         _probe_cgroup_scope _log_cgroup_scope_transition _compute_cgroup_scope_probe
         _CPU_DELEGATED _cpu_controller_delegated _cgroup_limits_from_config
+        _CGROUP_DEFAULT_SCOPE_MEMORY_HIGH_PCT _scope_memory_high_mb _read_resource_limits
         """.split()),
     "kiro_crew.sandbox_slice": tuple("""
         _SLICE_MEMORY_HIGH_FRACTION _SLICE_FALLBACK_MEMORY_HIGH_MB _SLICE_MEMHIGH_APPLIED
         _SLICE_MEMHIGH_DISABLED _default_slice_memory_high_mb
         _ensure_agent_slice_memory_high _SLICE_MEMHIGH_EVENTS_SEEN
         _SLICE_MEMHIGH_CLIMB_WARNED _slice_memory_events_high _check_slice_memory_pressure
+        _slice_own_high_events
         _SLICE_MEMHIGH_MUTEX _reconcile_slice_memory_high_off_thread
         _WINDOWS_INERT_RESOURCE_LIMIT_KEYS _WINDOWS_INERT_LIMITS_WARNED
         _warn_windows_inert_resource_limits_once apply_windows_resource_ceiling

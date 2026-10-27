@@ -89,7 +89,9 @@ from kiro_crew.messaging.dispatch_tools import (
     TOOLLESS_TURN_AGENT,
     TOOLLESS_TURN_REFUSAL_NOTE,
     ToollessTurnUnavailable,
+    _refuse_before_spawn_unless_toolless,
     _refuse_unless_toolless,
+    _toolless_spec_before_spawn,
     _toolless_turn_work_dir,
     _without_deny_reason,
     build_auto_approve,
@@ -658,6 +660,22 @@ class ChannelTurns:
         # operator's. Decided here, on the shared seam, so no adopter can set the
         # flag and forget the agent that gives it teeth.
         session_agent = TOOLLESS_TURN_AGENT if deny_all_tools else agent
+        # The tool-less spec's pre-spawn read, before any ``get_or_create`` below can
+        # cold-start the harness on it; ``_refuse_unless_toolless`` reads it again
+        # after the start, and both must find it mounts nothing.
+        toolless_before_spawn = (
+            await asyncio.to_thread(_toolless_spec_before_spawn, session_key)
+            if deny_all_tools
+            else False
+        )
+        if deny_all_tools and monitor is not None and not toolless_before_spawn:
+            # A wake claims its session below, outside the refusal handler, so a
+            # spec the read refused ends the wake here, before anything starts.
+            try:
+                _refuse_before_spawn_unless_toolless(session_key, toolless_before_spawn)
+            except ToollessTurnUnavailable as exc:
+                logger.warning("%s: %s", channel, exc)
+                return self._outcome(Verdict.TOOLLESS_REFUSED, monitor)
         _acquired = False
         # The provider THIS attempt acquired, for the failure handler's attribution
         # question. Bound before the try so every handler can read it -- an
@@ -823,6 +841,10 @@ class ChannelTurns:
             replaying = False
             while True:
                 if not claimed:
+                    if deny_all_tools:
+                        # Before ``get_or_create``: starting the session runs what
+                        # the spec names, and a later reset cannot undo that.
+                        _refuse_before_spawn_unless_toolless(session_key, toolless_before_spawn)
                     # A linked member session must validate its own memory before a
                     # cold provider start. The same identity is then used for this
                     # turn's prompt.
@@ -853,7 +875,12 @@ class ChannelTurns:
                 # The wake's claim serves its first attempt only; a replay reacquires.
                 claimed = False
                 if deny_all_tools:
-                    _refuse_unless_toolless(sessions, session_key, provider)
+                    await _refuse_unless_toolless(
+                        sessions,
+                        session_key,
+                        provider,
+                        authored_before_spawn=toolless_before_spawn,
+                    )
                 if recovery:
                     if stop_gen_at_entry is None:
                         stop_gen_at_entry = session_stop_generation(sessions, session_key)

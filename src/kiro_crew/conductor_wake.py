@@ -787,10 +787,10 @@ async def _fire(svc: Any, conductor_slot_key: str, item_id: str = "") -> str:
         # hours. With the flag, that tail arms at delay zero instead. The refusal still
         # comes back here and is still logged and dropped.
         #
-        # Passed UNGUARDED. An earlier revision wrapped this in ``except TypeError`` for
-        # "a service build that predates the flag"; no such build exists, because the
+        # Passed UNGUARDED, with no ``except TypeError`` for "a service build that
+        # predates the flag": no such build exists, because the
         # package defines one ``fire_now`` and it ships with this caller in the same
-        # commit -- so the branch could only ever be entered by a test stub, while
+        # commit -- so such a branch could only ever be entered by a test stub, while
         # silently retrying a genuine ``TypeError`` raised INSIDE ``fire_now``.
         _loop, reason, status = await svc.fire_now(loop_id, defer_if_firing=True, delay=window)
     except Exception:  # pragma: no cover - a push must never reach its trigger

@@ -192,6 +192,7 @@ Slack Socket Mode → events.py (dispatch) → handler.py → SessionManager →
 | `slack/allowlist.py` | Tracking-channel allowlist prompts (`prompt_allowlist`, `prompt_track_channel`) + config persistence (`persist_allowed_user`, `persist_tracking_channel`) |
 | `slack/scope_probe.py` | Tracked-channel history-readability probe (`warn_unreadable_tracked_channels`) — warns when the installed token cannot read a tracked channel (e.g. a private channel on an install predating `groups:history`) |
 | `slack/enterprise.py` | Enterprise Grid workspace validation — `validate_enterprise()` (startup auth.test + cache) + `check_message_origin()` (per-message team_id check). SEL audit on all outcomes |
+| `slack/team_ids.py` | Channel → Slack workspace (`T…`/`E…`) for the agent child env (`KIROCREW_SLACK_TEAM_ID`, see acp-client "Conversation identity on the child env"). Reads `RealSlackClient._channel_team`, the store that routes outbound calls, which the client registers with `use_channel_team_store` when built; no second copy and no fallback. Imports nothing Slack-specific so the ACP spawn path can read it |
 | `slack/channel_resolver.py` | Channel ID → human-readable name resolution (in-memory + on-disk cache), because `ChannelConfig` stores no name field |
 | `slack/channel_crew.py` | `resolve_channel_crew`: a per-channel agent name that is a Kiro Crew agent record → its `kiro_agent`, crew identity and workspace `cwd` for the chat turn's `get_or_create` (see "Per-channel agent override") |
 | `slack/outbound.py` | Lifecycle of a posted OPTIONS control. Holds no rendering of its own — `slack/format.py` owns that, so the redaction pipeline exists once |
@@ -1726,6 +1727,8 @@ The same opt-in picks the origin for the other Slack-posted dashboard links — 
 chat-mirror links, the Slack backfill's dashboard markers and the `send_message`
 Open-session button (`urls.tunnel_origin_if_opted_in` / `urls.dashboard_link_origin`);
 only `send_dashboard_link` keeps the host:port fallback.
+
+An enterprise build reads the opt-in as `false` (`urls.slack_tunnel_opt_in`, the `tunnel` row of `edition_locks.UNKEYED_LOCKS`), so it neither picks a tunnel origin nor reaches the on-demand provisioning seam below; see platform-context.md.
 
 The setting is independent of `tunnel.enabled` (which controls whether the
 tunnel itself runs). A user may run a tunnel for direct browser access while

@@ -380,9 +380,12 @@ def handle_focus_frame(
     previous = foreground.get(conn) if isinstance(foreground, dict) else None
     if isinstance(previous, str) and previous and slot_key != previous:
         _stamp_seen(state, previous, now)
-        # The last owner view leaving a thread drops its brief. Another window
-        # still showing the thread keeps the shared brief alive.
-        if not _shown_by_other(foreground, conn, previous):
+        # The last owner view leaving a thread drops a brief that has not yet
+        # posted its opener. Once the opener is out, leaving is only a pause:
+        # the result still lands as ordinary history. Another window still
+        # showing the thread keeps the shared brief alive either way.
+        opened = getattr(state, "_warm_task_brief_opened", ())
+        if previous not in opened and not _shown_by_other(foreground, conn, previous):
             cancel_warm_task_brief(state, previous)
     # The foreground registry's key bound, before any key is retained.
     if not isinstance(slot_key, str) or not slot_key or len(slot_key) > _MAX_FOREGROUND_KEY:
@@ -779,11 +782,12 @@ async def _still_current(
     expected: TaskSnapshot,
     *,
     require_claim: bool = False,
+    require_foreground: bool = True,
 ) -> TaskSnapshot | None:
     if (
         not _same_slot(state, slot)
         or slot.running
-        or not _is_foreground(state, slot.key)
+        or (require_foreground and not _is_foreground(state, slot.key))
         or slot.key in getattr(state, "_warm_task_brief_abandoned", ())
     ):
         return None
@@ -799,12 +803,19 @@ async def _still_current(
     return current
 
 
-async def _wait_for_idle_turn(state: "DashboardState", slot: "_ChatSlot", deadline: float) -> bool:
-    """Wait until *slot* runs no turn while the owner keeps it on screen."""
+async def _wait_for_idle_turn(
+    state: "DashboardState",
+    slot: "_ChatSlot",
+    deadline: float,
+    *,
+    require_foreground: bool = True,
+) -> bool:
+    """Wait until *slot* runs no turn, while the owner keeps it on screen when
+    *require_foreground* holds."""
     while slot.running:
         if (
             not _same_slot(state, slot)
-            or not _is_foreground(state, slot.key)
+            or (require_foreground and not _is_foreground(state, slot.key))
             or time.monotonic() >= deadline
         ):
             return False
@@ -817,15 +828,21 @@ async def _settled(
     slot: "_ChatSlot",
     expected: TaskSnapshot,
     deadline: float,
+    *,
+    require_foreground: bool = True,
 ) -> TaskSnapshot | None:
     """Re-read the claimed task once no turn runs; ``None`` means stale."""
     while True:
-        if not await _wait_for_idle_turn(state, slot, deadline):
+        if not await _wait_for_idle_turn(
+            state, slot, deadline, require_foreground=require_foreground
+        ):
             _skip(slot.key, "turn_outlasted_return")
             return None
         # A send's row may still sit in memory; the re-read below reads disk.
         await asyncio.to_thread(state.flush_slot_now, slot)
-        current = await _still_current(state, slot, expected, require_claim=True)
+        current = await _still_current(
+            state, slot, expected, require_claim=True, require_foreground=require_foreground
+        )
         if current is not None or not slot.running:
             if current is None:
                 _skip(slot.key, "stale")
@@ -1067,6 +1084,9 @@ async def _prepare_warm_task_brief(
         abandoned = getattr(state, "_warm_task_brief_abandoned", None)
         if isinstance(abandoned, set):
             abandoned.discard(slot.key)
+        opened = getattr(state, "_warm_task_brief_opened", None)
+        if isinstance(opened, set):
+            opened.discard(slot.key)
 
 
 async def _run_warm_task_brief(
@@ -1123,6 +1143,11 @@ async def _run_warm_task_brief(
     # without marking a turn: the deferral above and below still reads
     # ``slot.running``.
     indicator.enter_context(preparing_message(state, slot))
+    # From the opener on, the owner leaving the thread keeps the brief: only
+    # a typed row, a reset or a close cancels it.
+    opened = getattr(state, "_warm_task_brief_opened", None)
+    if isinstance(opened, set):
+        opened.add(slot.key)
     _post_message(
         state,
         slot,
@@ -1156,9 +1181,10 @@ async def _run_warm_task_brief(
     except Exception:
         logger.debug("warm task brief generation failed for %s", slot.key, exc_info=True)
 
-    # A stale result is dropped. Messages already posted are ordinary history.
+    # A stale result is dropped. Messages already posted are ordinary history,
+    # so the result lands even while the owner is away from the thread.
     # A turn that started meanwhile defers publication until it ends.
-    if await _settled(state, slot, snapshot, deadline) is None:
+    if await _settled(state, slot, snapshot, deadline, require_foreground=False) is None:
         return
     brief = _parse_result(text, snapshot.original_request, snapshot.progress)
     if brief is None:

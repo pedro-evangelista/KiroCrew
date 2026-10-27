@@ -120,9 +120,18 @@ async def run_script_hook(
     sk = ""
     if hook_event:
         sk = str(hook_event.get("parent_session_key") or hook_event.get("session_key") or "")
+    # The event this run fires for, read before any await: a dashboard edit
+    # rewrites ``hook.event`` in place, so the live field may name another event
+    # by the time the check below runs, while the stdin payload names this one.
+    firing_event = str((hook_event or {}).get("hook_event_name") or hook.event)
     # Offloaded: resolving the governance scope can walk the profile store, which
     # must not run on the gateway's shared event loop.
     gov_denied = await asyncio.to_thread(_script_hooks_capability_denied, sk)
+    if not gov_denied:
+        from kiro_crew.hook_event_governance import event_refusal
+
+        # The policy's ``events`` list names the trigger events a hook may fire on.
+        gov_denied = await asyncio.to_thread(event_refusal, sk, firing_event)
     if gov_denied:
         hook.last_run = time.time()
         hook.last_status = "blocked"
@@ -180,7 +189,7 @@ async def run_script_hook(
             )
     # Build hook event JSON for STDIN
     if hook_event is None:
-        hook_event = {"hook_event_name": hook.event, "cwd": os.getcwd()}
+        hook_event = {"hook_event_name": firing_event, "cwd": os.getcwd()}
     stdin_data = json.dumps(hook_event).encode()
 
     proc: Any = None
@@ -855,6 +864,10 @@ class ScriptHookStore:
                 # Off the loop, as in run_script_hook: the scope lookup can walk
                 # the governance profile store.
                 gov_denied = await asyncio.to_thread(_script_hooks_capability_denied, sk)
+                if not gov_denied:
+                    from kiro_crew.hook_event_governance import event_refusal
+
+                    gov_denied = await asyncio.to_thread(event_refusal, sk, event)
                 if gov_denied:
                     hook.last_run = time.time()
                     hook.last_status = "blocked"

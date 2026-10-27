@@ -165,6 +165,7 @@ from kiro_crew.dashboard.chat_api.prompt_queue import (  # noqa: F401
     api_chat_slot_queue_cancel,
     api_chat_slot_queue_edit,
     api_chat_slot_queue_reorder,
+    api_chat_slot_steer_retract,
 )
 from kiro_crew.dashboard.chat_api.resume import (  # noqa: F401
     _hydrate_slot_from_history,
@@ -246,6 +247,7 @@ from kiro_crew.dashboard.chat_api.slot_guards import (  # noqa: F401
 from kiro_crew.dashboard.chat_api.slot_lifecycle import (  # noqa: F401
     _await_guarded_history_write,
     _close_slot,
+    _drain_file_changes_flush,
     _NudgeRetireFailed,
     _pending_guarded_history_writes,
     _release_closed_execution,
@@ -445,6 +447,7 @@ from kiro_crew.dashboard.slot_buffers import (  # noqa: F401
     note_hold_durable,
     persist_deferred_notes_sync,
 )
+from kiro_crew.dashboard.slot_color import write_slot_color  # noqa: F401
 from kiro_crew.dashboard.slot_ownership import (  # noqa: F401
     SESSION_CONTROL_DENIED,
     app_may_control_session,
@@ -909,6 +912,14 @@ class SlotCloseError(Exception):
 # and leaves the tab the user still has open, rather than retracting the name
 # while a worker thread is still on its way to the rename.
 _GUARDED_WRITE_WAIT_SECS = 5.0
+
+#: Seconds a close waits for the turn's in-flight file-change flush before it
+#: archives without the chips. The loop watchdog
+#: (``dashboard.loop_stall_exit_after_secs``, 25 s) is the bound the same read
+#: had when it ran ON the event loop: past it the whole gateway was killed, so a
+#: read this long never produced chips there either. Here only this close waits,
+#: and past the bound it goes on to archive what the window holds.
+_FILE_CHANGES_DRAIN_SECS = 25.0
 
 
 # Serializes slot SWITCH transactions that share one session, keyed by

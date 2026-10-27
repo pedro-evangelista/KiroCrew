@@ -54,7 +54,8 @@ only its registry entry (`_FOLDS`, in `crew_log/projection_registry.py`) beside 
 | `crew_log/projection_dashboard.py` | the `panel`, `agentic` and `mistakes` slot folds |
 | `crew_log/projection_crewmate.py` | the `goal` and `waiting` slot folds, a crewmate's own record |
 | `crew_log/projection_workers.py` | the `workers` slot fold (the worker sessions a mate created) and its internal per-worker part `worker` (what one worker is doing), merged at read |
-| `crew_log/projection_work.py` | the `work` slot fold, and which units a work board spans (`_work_units`, `work_slots_naming_board`) |
+| `crew_log/projection_work.py` | the `work` slot fold, the `worktree` walk's unit join (`_work_units`) and the rebuild's `work_slots_naming_board` |
+| `crew_log/work_relay.py` | copies a bound worker's charges, and a sub-board's records, into the parent board's own log |
 | `crew_log/projection_workstreams.py` | the `workstreams` slot fold and its board closure |
 | `crew_log/projection_worktree.py` | the `worktree` tree fold |
 | `crew_log/projection_registry.py` | `_FOLDS`: what each fold touches, copies and retains, its eager or lazy posture, and the import-time checks over the registry |
@@ -403,7 +404,7 @@ reopened.
 | `worker` | INTERNAL, bound by no page and served by no route: one worker's `row` and the `parent` its first opener named, folded over that worker's own units (`worker_units`); the per-worker part `workers` merges. Lazy. |
 | `waiting` | What a mate waits on the person for, from the newest `dashboard/waiting_changed` snapshot: `items` (newest first), `count` (how many wait in all, from the snapshot's `total`), `omitted` (how many the list cut; each item's `options_omitted` likewise for its choices), `newest` (the newest item's text, `""` when nothing waits) and `changes`. It keeps up to `CREWMATE_WAITING_LIMIT` items, the same bound the producer cuts at, and `CREWMATE_OPTION_LIMIT` choices each. |
 | `workers` | The worker sessions a mate created with `session_create`, newest first: `items` (each with `slot`, `task` -- from the FIRST user message only, `""` when that message carries `chunks` instead of `text`; the line of what it was given that names the ask: a `TASK:` or `GOAL:` heading, else the first line past the relay's provenance line and a leading `You are ...` role preamble --, `state`, `agent`, `started_at`, `last_activity_at`, `last_said` -- the last line of its newest reply, `""` when that reply was too long for one entry and carries `chunks` instead of `text` --, `report` and `report_status` from its own work report, `turns`, `stop_reason`, `closed_reason`), `counts` per state, `total` and `omitted`. Two folds merged at read (`read_slot_projection` → `_read_workers` → `merge_render`): `workers` reads `session/spawned` in the mate's OWN units (its creates, under the cap), and the internal `worker`, one slot-memo cell per child, reads that child's own units in `previous_sid` succession order (`units_in_succession`), its first unit (which holds the task) and its newest `WORKERS_UNITS_PER_CHILD` while its creator still holds it and every unit once the session tree's current parent is not its creator -- released, or released and then adopted (`worker_units`, `_let_go`) -- so one worker writing continues its own cell, the others answer warm, and a released worker stays `released`. The merged revision is minted fresh whenever any part's moves, and one crewmate's whole merged read, parts and revision, runs under its own lock (`_WORKERS_READ_LOCKS`), so a read that captured older parts never gets the higher revision. Until the session tree is seeded for the current store (`tree_seeded`), it names no children and no creator, and the read is served at revision 0, so the provisional value never outranks the one read after the seed. A worker's own `progress` report after a `done` or `blocked` one puts the row back to what its turns say. The children are the newest `2 * WORKERS_LIMIT` the session tree's creation records name, and a worker is drawn when the mate's log holds its create or its own `session/opened` names the mate as `parent`. From the worker's log: `turn/started`, `turn/completed`, `message/received`, `message/sent`, `work/recorded` (actor `worker`), `session/closed`, `session/released` and `session/adopted` (one naming a parent other than the worker's creator reads `released`, released first or not). Task, reply, report and close lines keep up to `WORKERS_TEXT_LIMIT` characters and end in "…" when cut. States: `starting`, `running`, `idle` (between turns), `done` and `blocked` (only from the worker's own report), `failed` (a `stop_reason` that `metrics.turns.turn_outcome` classifies as anything but `ok`, `cancelled`, `tool_stall` or `stale_recover` -- a timeout, an error, an interrupt; those four leave it `idle`), `closed`, `released`. Whether a worker FINISHED its task is not in the log without a `done` report, so such a worker reads `idle`. The eager path routes a worker's entry to its creator's cell (`eager._creator_slot`). It keeps up to `WORKERS_LIMIT` rows and `WORKERS_TEXT_LIMIT` characters per cell. |
-| `workstreams` | The project report: every board this slot reaches, keyed by `(slot, generation)`, each task costed by the credits of the worker session bound to it. It reads `work/recorded`, `session/opened` and the three turn closers, and counts board, task and spender overflow rather than dropping it silently. |
+| `workstreams` | The project report: every board this slot's own log holds (its own and the sub-boards relayed into it), keyed by `(slot, generation)`, each task costed by the credits of the worker session bound to it. It reads `work/recorded`, `work/charged`, `session/opened` and the three turn closers, and counts board, task and spender overflow rather than dropping it silently. |
 
 No fold interprets `card/*` or `guide/*`. They are declared in the type registry, so
 every fold's `known=` vocabulary includes them and a log holding them folds as
@@ -479,14 +480,29 @@ entry re-states a pre-projection record with its own stamps (a rejected approach
 already lists is not appended again), while a carried pass on an issue the crew never
 worked records the row and no work item.
 
-The `work` fold extends the conductor's own units with worker units discovered
-from recorded bindings. `_work_units` scans the conductor units for
-`work/recorded` entries whose action is `bind`, whose `slot` is the board being
-folded, and whose non-empty `worker_session_key` names a worker slot. Every unit
-proved for those worker slots is appended after the conductor units, with unit ids
-de-duplicated. `_work_step` filters every retained entry by the bound board slot,
-so a worker unit shared by several boards contributes only entries that name this
-board.
+The `work` and `workstreams` folds read the board's OWN units only
+(`session_ledger.work_crew_log_units(slot)`; `_own_board_units` caps the project
+report's at `WORKSTREAMS_UNIT_LIMIT`, newest kept). Nothing walks a bind to find a
+worker's log. What the board needs from other sessions is written into its log by the
+gateway, the one writer of every log:
+
+- `api_work_report` writes a bound worker's report twice: the worker's own copy, and
+  the board's copy in the conductor's unit (`_conductor_unit`), which is the one the
+  fold reads. The route reports success once the board's copy lands; a mirror that
+  fails is logged and the report stands.
+- `work_relay` copies each charge-bearing closer (`turn/completed`,
+  `subagent/completed`, `subagent/failed`, `background/completed`) of a bound session
+  into the binding board's newest unit as `work/charged`, and relays a board's own
+  `work/recorded` and `work/charged` up into its parent board's unit when that board's
+  conductor is itself bound (`relay` names the origin). Copies are deduplicated per
+  (origin, board) in memory and per `closer` in the fold.
+
+There is no migration: a bound open item whose report has not reached the conductor's
+log renders `summary: "waiting for next report"` (`WORK_AWAITING_REPORT`) until the
+worker reports again, and a closed item renders its own state with no worker summary.
+`_work_step` still filters every entry by the bound board slot, so a relayed
+sub-board entry folds only into the sub-board's own row of the project report. The
+lazy `worktree` tree fold keeps its bind walk (`_board_closure_units`).
 
 `_Fold.bind_slot` is the optional fourth fold operation. The `work` fold registers
 `_work_bind_slot`, and `fold_slot_checkpoint` invokes it before the first entry.
@@ -898,10 +914,9 @@ their own append job (`work/recorded`, `panel/published`) call it themselves.
 
 **The wake carries the BOARD, and that is a correctness requirement.** A unit's header
 names the slot that unit ran under, which is the board for a conductor's own entry. A
-worker's `work/recorded` names the CONDUCTOR's board in its own `slot` field and reaches
-that fold only by being joined into it (`_work_units`). So resolving the header would
-advance the worker's own board -- which nothing reads -- and leave the conductor's exactly
-as stale as before. The emitter holds the entry, so it reads the board there; an empty
+worker's `work/recorded` names the CONDUCTOR's board in its own `slot` field, while the
+board's own copy of it lands in the conductor's unit. So resolving the header for the
+worker's copy would advance the worker's own board -- which nothing reads. The emitter holds the entry, so it reads the board there; an empty
 board means the header names it, which is true of every type that carries none.
 
 **The wake is enqueued AFTER the causal order is recorded.** Both eager entry types are
@@ -1081,14 +1096,12 @@ entry exists while some pass holds or waits for that key's lock, and the last ho
 leave drops it. Dropping one any earlier would hand the next caller a different lock object,
 which serializes nothing.
 
-**What eager folding does NOT make free: unit discovery.** A slot read has two halves --
-finding which units name this board, then folding them -- and only the second is moved.
-Discovery is not free either: the only record that a worker belongs to a board is a `bind`
-entry in the conductor's own log, so `_work_units` parses every entry of every conductor
-unit before the fold is asked for anything. That is a per-read cost by design
-(`test_work_fold_warm_read.py` measures it separately and names it discovery), it is
-unchanged here, and the eager worker pays it once per batch
-(`test_a_burst_of_entries_costs_the_worker_one_pass`).
+**Unit discovery is a listing, not a walk.** A slot read has two halves -- finding which
+units name this board, then folding them. For `work` and `workstreams` the first is the
+board's own unit listing: no entry is parsed to find a worker, because a worker's report
+and charges are written into the board's own log (see the `work` fold above).
+`test_an_eager_advance_with_no_new_entry_reads_no_old_entry` pins that an idle advance of
+either fold walks no entry.
 
 Which half dominates is measured, not assumed. On a board with four bound workers -- each
 with its own message-heavy log -- and a message-heavy conductor log, 1,813 entries total:
@@ -1224,8 +1237,13 @@ persisted, because nothing outside one process orders by it.
 
 **The slot frame.** One kind, `slot_projection`, in two shapes. `{slot}` alone is the original
 growth signal and still means "re-read this slot". `{slot, fold, revision, value}` is what
-an eager advance sends. The client keeps the highest revision per (slot, fold), discards
-anything lower OR equal, and seeds its own cache from the value -- so the read is removed
+an eager advance of the `work` fold sends. Every other slot fold's advance is sent as
+`{slot, fold, revision}` with no value: the client caches only `work` by fold, so it
+would drop any other value and re-read the board either way, and a frame with no value
+takes that same path as the growth signal. The bus event keeps the whole value for every
+fold, so in-process subscribers are unaffected. For a valued frame the client keeps the
+highest revision per (slot, fold), discards anything lower OR equal, and seeds its own
+cache from the value -- so the read is removed
 rather than made cheaper. The seed never moves a cached value backwards: a REST read
 records no revision in the client's frame ledger, so a delayed frame can pass that
 ledger and still be older than what the cache holds, and then the held value stays --
@@ -1278,10 +1296,28 @@ The tree (`crew_log/session_tree.py`) folds EVERY log and keys the result by
 SLOT, because it answers "what does the whole tree look like" for a display, and
 the live row a child nests under is the slot's -- a slot outlives its ACP
 session. The fence (`crew_log/read.py`, `dispatch_view`) keys on SLOT for the
-same reason, and does not fold the collection a second time: it calls
-`session_tree.SessionTree.records` and `session_tree.fold_tree` and adds only the
+same reason, and folds with the same `session_tree.fold_tree` over the head
+records only (no adoption, release or spawn decisions), adding only the
 unit-to-slot map a read needs, because a request names a unit while the lineage
-is recorded between slots. So the two readers share one fold and cannot disagree
+is recorded between slots. Its records come from one of two places. The fast path
+folds the in-memory session tree projection's records once per projection state
+and serves later requests from that fold while the projection hands out the same
+`nodes` object. A request that finds the projection unseeded seeds it first
+(`ensure_seeded`, idempotent), so the store is scanned once per process rather than
+once per request. Before a grant from the cached fold, the named unit and every held
+record citing the creator its slot chain was placed under are re-read by name and
+must still read cleanly with the same slot and creator; otherwise the request takes
+the scan, so a held record whose bytes are gone (a checkpoint written before a partial
+removal) cannot grant. The fast path is taken only when the projection is seeded for this
+store, not a failed seed's stand-in (`seed_given_up`), and COMPLETE (no head fault at seed,
+nothing past the cap, no open decision or spawn re-read fault in `_fault_sids`;
+a later clean re-read of the unit clears its fault and a forgotten or evicted unit
+takes its fault with it); and only when every unit the request names is held, or
+has no log on disk (one by-name probe each), and no held named unit's creator chain
+cites a slot the projection holds no log for. Anything else takes the old
+`SessionTree.reading` scan, so the scan's own answer and `incomplete` flag decide.
+The scoped listing (`list_session_units`) always takes the scan: it walks the root
+anyway, and the projection may lack a child log another process wrote. So the two readers share one fold and cannot disagree
 about who dispatched whom -- an earlier sid-keyed walk here could not, since a
 restart gives a tab a new session id and the recorded `parent.sid` then named a
 unit the re-attached creator no longer writes to. `sid` stays on the entry as the
@@ -1527,12 +1563,15 @@ on the walk, reachable only through forged or damaged records. `cap` means the b
 was reached. `unknown` means the log the walk was ASKED to start from answered no
 usable record, so there is no slot to walk.
 
-**Completeness travels with the answer.** `SessionTree.chain` returns a
-`ChainReading` pairing the walk with the scan's own `incomplete`, for the reason
-`TreeReading` is a pair and with a sharper consequence: a predecessor the scan never
-admitted -- past `TREE_UNIT_CAP`, or a unit whose bytes faulted -- is absent from
-the records, so the walk reports `missing` for a log that is on disk and readable.
-The walk cannot tell those apart; only the scan can.
+**Completeness travels with the answer.** `SessionTree.chain` reads the chain's own
+units by name (`_chain_records`: the head, then each cited `previous_sid` while the
+walk stays on the head's slot, at most `SLOT_CHAIN_CAP` units), never listing the
+root, and returns a `ChainReading` pairing the walk with whether any of those reads
+FAULTED, for the reason `TreeReading` is a pair: a predecessor whose bytes faulted is
+absent from the records, so the walk reports `missing` for a log that is on disk.
+The walk cannot tell those apart; only the read can. Because every cited predecessor
+is probed by name, `missing` without `incomplete` means the log is gone, never that a
+cap hid it.
 
 **Order comes from the edges, never from a timestamp.** `header.createdAt` is wall
 clock, so a backward step across a restart gives the newer log the earlier stamp and
@@ -1667,9 +1706,39 @@ already names:
 <store dir>/projections/<fold>.json
 {"v", "key", "state_version", "watermark",
  "identity": {"unit", "origin", "first_seq"},
- "witness": {"seq", "prefix_sha", "prefix_records"},
+ "witness": {"seq", "prefix_cuts"} or {"seq", "prefix_sha", "prefix_records"},
+             plus optional "resume" and "prefix_extent",
  "state"}
 ```
+
+**What a resume costs.** A unit with a cut counter is written with a `prefix_cuts`
+witness, settled by one small read; a unit without one gets the digest. Every witness
+written now also carries two ADDITIVE keys: `resume`, the byte position
+(segment, offset, seq, cuts) of the record at the savepoint's seq, which the tail read
+seeks to instead of decoding every record below it (`CrewLog.iter_from(resume=)`
+re-checks it against the live file first); and `prefix_extent`
+(`crew_log/prefix_extent.py`): device, inode, size and mtime of the segment the prefix
+ends in, the name, size and mtime of every older segment, and a SHA-256 of the last
+16 KiB of the prefix (and device and inode for every segment). A unit with a cut
+counter is admitted when the count matches and the files are untouched or only appended
+to. A unit without one is admitted on the extent only while EVERY segment is untouched
+(same file, size and mtime); any change, an append included, costs one full re-hash,
+after which the extent is re-taken. When the extent does not hold, a digest witness
+falls back to the full re-hash and a count witness is refused, so a segment rewritten in
+place, truncated or replaced is still caught. A payload written
+before these keys lacks them and is checked as it always was; a build that predates
+them ignores them. A digest-witnessed file is rewritten once, on its first resume,
+with a count witness (unit has a counter) or with an extent (unit has none and the
+file stored a position). The append-tolerant form of the extent, used only beside a cut
+count, does not see an outside edit deep inside the newest segment followed by an
+append; the count still covers every rewrite the store itself makes.
+
+A bundle CACHED in this process (`fold_session(since=)`) carries the same position and
+extent, plus the cut count it was folded under (`SessionProjections.cuts`). While the
+extent holds and the count reads the same, that bundle has custody of its prefix, so
+an advance that earns a savepoint write persists the state it already holds instead of
+folding from disk; the eager warm path then costs the new entries alone. A bundle on a
+unit with no counter keeps the old rule and refolds from disk to earn a write.
 
 The envelope is the projection kernel's (`kiro_crew.projection.checkpoint`), and this
 package supplies the two blocks inside it. The `identity` block holds the facts a
@@ -1917,6 +1986,7 @@ Same store, same kernel envelope, same `prefix_admit`, in a leaf of its own:
 {"v", "key", "state_version", "watermark",
  "identity": {"slot", "units", "marks", "unit", "origin", "first_seq"},
  "witness": {"seq", "prefix_cuts"} or {"seq", "prefix_sha", "prefix_records"},
+             plus optional "resume" and "prefix_extent" (as for a session fold),
  "state"}
 ```
 

@@ -172,6 +172,14 @@ SCOPE_CATALOG: Dict[str, ScopeSpec] = {
     # existing single gate ``resolve_selected_backend`` reads the narrowed registry, so
     # it degrades a denied persisted value with no second check.
     "agent_backend": ScopeSpec(RULESET, matcher="identifier"),
+    # Which inbound webhook sources may start work (RFC crew-enterprise-edition,
+    # appendix rows "Incoming webhooks" and Red "Webhooks by source"). Members are
+    # source ids: ``agent`` (``POST /api/hooks/agent``) and ``ops-mission-control``
+    # (that app's signal webhook), e.g. ``{"webhooks": {"mode": "allow", "allow":
+    # ["agent"]}}``. Asked by ``kiro_crew.webhook_sources.source_refusal`` at each
+    # source's entry, policy layer only (a request carries no session). An absent
+    # scope leaves each source to its own switch.
+    "webhooks": ScopeSpec(RULESET, matcher="identifier"),
     # Capabilities (registered defaults — see the CAPABILITY-DEFAULT CONTRACT above):
     "capabilities.spawn": ScopeSpec(
         CAPABILITY, capability_default=True, scope_matchers={"agents": "identifier"}
@@ -185,7 +193,16 @@ SCOPE_CATALOG: Dict[str, ScopeSpec] = {
     # that is available unless a policy explicitly sets
     # ``{"capabilities": {"browse": {"enabled": false}}}``.
     "capabilities.browse": ScopeSpec(CAPABILITY, capability_default=True),
-    "capabilities.script_hooks": ScopeSpec(CAPABILITY, capability_default=False),
+    # Inner ``events`` ruleset (``identifier`` matcher): which hook trigger events
+    # may fire a script hook once the capability is on, by event name --
+    # ``AgentSpawn``, ``PreToolUse``, ``Stop`` and the rest (``hooks.HOOK_EVENT_*``)
+    # (RFC crew-enterprise-edition, appendix row "Hook trigger events"). Queried as
+    # ``events:<event>`` by ``hook_runtime.governance_gate`` before a hook runs, and
+    # for each event of the user's kiro hooks before they are installed. An unnamed
+    # ruleset permits every event.
+    "capabilities.script_hooks": ScopeSpec(
+        CAPABILITY, capability_default=False, scope_matchers={"events": "identifier"}
+    ),
     "capabilities.cron": ScopeSpec(CAPABILITY, capability_default=False),
     "capabilities.messaging": ScopeSpec(CAPABILITY, capability_default=False),
     # Agent workload identity + Gateway MCP (opt-in, like messaging/publish).
@@ -207,8 +224,21 @@ SCOPE_CATALOG: Dict[str, ScopeSpec] = {
     # implements a destination is the orthogonal CPP PublishRegistry seam; this
     # gate only decides WHETHER + to WHERE.  Not a lever over ``git push`` (deny
     # floor) or ``network.egress`` (fetch host) — those are separate planes.
+    #
+    # Three more inner rulesets (RFC crew-enterprise-edition, appendix rows "Deploy
+    # regions", "Publish audiences", "Deploy accounts"), checked before anything is
+    # uploaded (``publish_governance``): ``regions`` (the cloud region a deploy
+    # writes to), ``audience`` (who may read the result: ``public``, ``shared`` or
+    # ``private``) and ``accounts`` (the cloud account id a deploy writes to).
     "capabilities.publish": ScopeSpec(
-        CAPABILITY, capability_default=False, scope_matchers={"destinations": "identifier"}
+        CAPABILITY,
+        capability_default=False,
+        scope_matchers={
+            "destinations": "identifier",
+            "regions": "identifier",
+            "audience": "identifier",
+            "accounts": "identifier",
+        },
     ),
     # Installed theme packs may ship a persona.md whose (consent-gated) text is
     # injected into the agent's FIRST turn — third-party text entering the

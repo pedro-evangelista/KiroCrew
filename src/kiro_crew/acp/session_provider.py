@@ -21,7 +21,7 @@ import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from typing import Mapping as _Mapping
 
 from kiro_crew.acp import session_provider_mcp_reinject as _sp_mcp_reinject
@@ -734,6 +734,15 @@ class AcpSessionProvider(LLMProvider):
         return self._handle.supports_steer
 
     @property
+    def supports_steer_retract(self) -> bool:
+        """True when the backing handle can take back a steer its turn has not read."""
+        return self._handle.supports_steer_retract is True
+
+    async def clear_pending_steers(self) -> bool | None:
+        """Forward a steer clear to the session handle (kiro ``_session/steer/clear``)."""
+        return await self._guarded(self._handle.clear_pending_steers(), own_write_only=True)
+
+    @property
     def steer_needs_loss_recovery(self) -> bool:
         """True when a delivered steer can still be lost (see the handle)."""
         return self._handle.steer_needs_loss_recovery is True
@@ -1170,6 +1179,18 @@ class AcpSessionProvider(LLMProvider):
         session under the kiro label.
         """
         return self._runtime.acp_backend
+
+    def effective_spec_declares_zero_tools(self, *, authored_before_spawn: bool = False) -> bool:
+        """``AcpClient.effective_spec_declares_zero_tools``, judged on the runtime serving this session.
+
+        The runtime carries the agent, work directory and native skill projection
+        that function reads. Blocking; async callers use ``asyncio.to_thread``.
+        """
+        from kiro_crew.acp.client_mcp_array import effective_spec_declares_zero_tools
+
+        return effective_spec_declares_zero_tools(
+            cast(Any, self._runtime), authored_before_spawn=authored_before_spawn
+        )
 
     @property
     def manual_compact_unsupported_backend(self) -> str | None:

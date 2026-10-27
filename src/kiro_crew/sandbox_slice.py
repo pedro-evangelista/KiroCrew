@@ -24,6 +24,8 @@ from kiro_crew.sandbox_cgroup import (
     _cgroup_limits_from_config,
     _cpu_controller_delegated,
     _probe_cgroup_scope,
+    _read_resource_limits,
+    _scope_memory_high_mb,
     _warn_cgroup_unavailable,
 )
 
@@ -160,8 +162,23 @@ _SLICE_MEMHIGH_EVENTS_SEEN: int | None = None
 _SLICE_MEMHIGH_CLIMB_WARNED = False
 
 
+def _slice_own_high_events(slice_dir: Path) -> int | None:
+    """The slice's OWN ``high`` event count, excluding its descendants.
+
+    ``memory.events`` is hierarchical: it also counts ``high`` events of every
+    cgroup below the slice. Each agent scope carries its own finite
+    ``MemoryHigh`` (:func:`cgroup_scope_argv`), so one runtime over ITS ceiling
+    would read as the whole slice being throttled. ``memory.events.local``
+    counts only breaches of the slice's own ``memory.high``. When that file is
+    missing, empty or unreadable (a kernel older than 5.2) this returns ``None``:
+    no counter signal, so a scope's own events never read as slice throttling,
+    and ``memory.current >= memory.high`` is the only throttling signal there.
+    """
+    return _read_cgroup_counters(slice_dir / "memory.events.local").get("high")
+
+
 def _slice_memory_events_high() -> int | None:
-    """Return the ``high`` counter from the slice cgroup's ``memory.events``.
+    """Return the slice cgroup's own ``high`` counter (:func:`_slice_own_high_events`).
 
     The slice directory comes from :func:`_agents_slice_cgroup_dir`, which
     understands systemd's dash-hierarchy (``kirocrew-agents.slice`` nests
@@ -172,11 +189,11 @@ def _slice_memory_events_high() -> int | None:
     slice_dir = _agents_slice_cgroup_dir()
     if slice_dir is None:
         return None
-    return _read_cgroup_counters(slice_dir / "memory.events").get("high")
+    return _slice_own_high_events(slice_dir)
 
 
 def _check_slice_memory_pressure() -> None:
-    """Warn when the slice's ``memory.events`` ``high`` counter climbs.
+    """Warn when the slice's own ``high`` event counter climbs.
 
     Past ``memory.high`` the kernel throttles-and-reclaims the subtree
     SILENTLY — agents just slow down; nothing kills and nothing alerts, since
@@ -206,7 +223,7 @@ def _check_slice_memory_pressure() -> None:
         return
     _SLICE_MEMHIGH_CLIMB_WARNED = True
     logger.warning(
-        "agent slice %s: memory.events high counter climbed %d -> %d — "
+        "agent slice %s: memory.events.local high counter climbed %d -> %d — "
         "aggregate agent memory crossed the slice MemoryHigh ceiling and the "
         "kernel is throttling the whole agent subtree; agents run slowly "
         "(not hung) until aggregate memory drops. See "
@@ -274,6 +291,7 @@ _WINDOWS_INERT_RESOURCE_LIMIT_KEYS = (
     "max_open_files",
     "max_total_memory_mb",
     "max_total_processes",
+    "scope_memory_high_pct",
 )
 _WINDOWS_INERT_LIMITS_WARNED = False
 
@@ -393,7 +411,11 @@ def cgroup_scope_argv(argv: list[str]) -> list[str]:
 
     Prepends ``systemd-run --user --scope`` with ``TasksMax`` (pids.max, the
     fork-bomb ceiling), ``MemoryMax`` + ``MemorySwapMax=0`` (memory.max, the
-    RSS balloon ceiling), and — when the cpu controller is delegated —
+    RSS balloon ceiling), ``MemoryHigh`` (memory.high, a soft ceiling at
+    ``resource_limits.scope_memory_high_pct`` of MemoryMax, default 90%, so a
+    runtime that fills page cache reclaims and is throttled on its own before
+    the shared slice ceiling slows every runtime; see
+    :func:`_scope_memory_high_mb`), and — when the cpu controller is delegated —
     ``CPUWeight`` (proportional fair-share: agents run full speed on an idle
     host but yield to interactive work under contention; never a hard
     throttle) plus an OPT-IN ``CPUQuota`` hard cap
@@ -471,12 +493,20 @@ def cgroup_scope_argv(argv: list[str]) -> list[str]:
     # does config reads + a systemctl subprocess. MemoryHigh on a slice
     # applies to already-running members, so the spawn need not wait for it.
     _reconcile_slice_memory_high_off_thread()
-    max_procs, max_mem_mb, cpu_weight, max_cpu_percent = _cgroup_limits_from_config()
+    # One config read per scope start, shared by every limit below.
+    limits_config = _read_resource_limits()
+    max_procs, max_mem_mb, cpu_weight, max_cpu_percent = _cgroup_limits_from_config(limits_config)
+    # Per-scope soft ceiling: without it the scope sits at
+    # memory.high=max, so one runtime's page-cache growth is reclaimed only at
+    # the SHARED slice MemoryHigh, which throttles every runtime together.
+    memory_high_mb = _scope_memory_high_mb(max_mem_mb, limits_config)
+    memory_high = [] if memory_high_mb is None else ["-p", f"MemoryHigh={memory_high_mb}M"]
     props = [
         "-p",
         f"TasksMax={max_procs}",
         "-p",
         f"MemoryMax={max_mem_mb}M",
+        *memory_high,
         "-p",
         "MemorySwapMax=0",
     ]
@@ -778,8 +808,8 @@ def agents_slice_throttling() -> bool:
     Two signals, either suffices. ``memory.current >= memory.high`` is the
     kernel's own definition of "over the soft ceiling"; under sustained
     pressure reclaim holds usage AT the ceiling rather than above it, so the
-    equality is the steady state, not an edge. The ``memory.events`` ``high``
-    counter climbing since this function's previous read is the second signal:
+    equality is the steady state, not an edge. The slice's own ``high`` event
+    counter (:func:`_slice_own_high_events`) climbing since this function's previous read is the second signal:
     the kernel increments it every time it throttles, so during an episode it
     advances between any two probes even when reclaim has momentarily pushed
     usage under the line. The first read only baselines the counter. An
@@ -794,7 +824,7 @@ def agents_slice_throttling() -> bool:
     slice_dir = _agents_slice_cgroup_dir()
     if slice_dir is None:
         return False
-    counter = _read_cgroup_counters(slice_dir / "memory.events").get("high")
+    counter = _slice_own_high_events(slice_dir)
     previous = _SLICE_THROTTLE_PROBE_SEEN
     now = time.monotonic()
     if counter is not None:

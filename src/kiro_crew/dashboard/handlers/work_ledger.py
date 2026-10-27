@@ -144,6 +144,7 @@ if TYPE_CHECKING:  # every owner-defined name in _EXPORTS, for type checkers and
         _baseline_overflows,
         _board_header,
         _board_lock,
+        _conductor_unit,
         _crew_store,
         _current_item_and_board,
         _drain_before_cancelling,
@@ -231,4 +232,5 @@ if TYPE_CHECKING:  # names it serves from outside the family, from their homes
     )
     from kiro_crew.work_vocab import (  # noqa: F401
         WORK_CONDUCTOR_FIELDS,
+        WORK_MAX_DEPTH_MAX,
     )

@@ -536,6 +536,11 @@ async def stop_slot_turn(
         # when it was pressed, and a later send stays queued for the next turn.
         discarded = list(slot._queue)
         slot._queue.clear()
+        # A drop reported while the settle below suspends must find no take-back,
+        # or Queue instead would queue text this kill already discarded.
+        from kiro_crew.dashboard import steer_retract
+
+        steer_retract.on_hard_stop(slot)
         # A cross-session delivery among the taken entries has a sender holding a
         # "queued, will run later" receipt; nothing else here reaches that sender.
         # Told before the settle can suspend, so a cancellation of this stop

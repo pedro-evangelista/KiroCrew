@@ -444,7 +444,6 @@ async def link_slot_to_slack(
             if not permitted:
                 raise SlackLinkError(403, "channel_not_permitted", "channel is not permitted")
 
-        # Check if already linked
         existing_ts, existing_chan = state.sessions.get_slack_link(session_key)
         if existing_ts and existing_chan:
             try:

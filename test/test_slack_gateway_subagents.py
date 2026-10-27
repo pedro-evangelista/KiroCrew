@@ -605,7 +605,6 @@ class TestSubagentDone:
     async def test_dashboard_slot_idle_triggers_run_chat(self):
         """Subagent done → dashboard slot idle → _run_chat."""
         orch, mock_sm = self._setup_orch_with_subagent_mgr()
-        # Get the on_done callback
         on_done = mock_sm.call_args[1]["on_done"]
 
         slot = MagicMock()

@@ -212,6 +212,42 @@ Three structural facts explain most of the rest:
   `pull-requests: read`, never checks out code, and
   `test/test_main_macos_failure_watch.py` pins the names, the gate and the
   paging with `gh` stubbed.
+- **A red test on any leg of main opens one `Main is red:` issue.** With the
+  merge queue off, the push run of `CI` runs the whole matrix and a red Linux or
+  Windows shard there reaches nobody. `main-red-watch.yml` runs on
+  `workflow_run: completed` of `CI`; for a push to `main` that ended `failure` or
+  `timed_out`, it reads the log of each failed job and takes the node ids and
+  message prefixes (first 80 characters) from pytest's short test summary
+  (`.github/scripts/main_red_nodeids.py`). It opens or updates one issue,
+  `Main is red: <first node id>`, under the `main-red` label (found by title
+  prefix if the label cannot be created), holding that set, the first-red SHA and
+  the streak. A run that names no node id (a Fast Gate barrier timeout, a Coverage
+  Gate failure) writes nothing, and a cancelled run never reaches the job. The
+  body's `Fix in progress:` line is rewritten on every main run from the open pull
+  requests that cross-reference the issue, so a second author sees that a fix
+  exists and can put `Fixes #<issue>` in their own. A later push run, or a
+  successful re-run of the last red one, comments and closes the issue only if
+  it ran the full backend suite (the `Backend Tests` shards' coverage upload ran,
+  which `ci.yml` skips on a frontend-only or leaf-only scope). It is warn only: it
+  writes an issue, comments on no pull request, assigns and mentions no one but
+  the author of a cross-referencing fix. It holds `actions: read`,
+  `contents: read` and `issues: write`, and `test/test_main_red_watch.py` pins the
+  name, the gate and the parsing, and runs the step with `gh` stubbed.
+- **A failed pull request run names the tests that are red on main.** While a
+  `Main is red:` issue is open, `main-red-pr-notice.yml` reads the failed jobs of
+  a same-repository pull request's `CI` run (target `main`). If one of its
+  failing test ids is also in the issue's set, it writes one comment, found by a
+  hidden marker and edited in place, listing which failures are the same as main
+  and which are the author's. A failure counts as the same only when the message
+  start (80 characters) matches, the pull request does not change that test file
+  and its base contains the main commit of the issue's last red run; anything it
+  cannot show is the
+  author's, and a failing check that names no test is always the author's. It is
+  a comment: no status, label, assignee or mention, `continue-on-error`, and the
+  same three permissions as `main-red-watch.yml`. It reads only an issue the
+  Actions token filed and only that issue's checked state record; the fix line is
+  rebuilt from the issue timeline, not copied from the editable body.
+  `test/test_main_red_pr_notice.py` runs the step with `gh` stubbed.
 - **Do not merge a feature PR past a non-green `PR Readiness`.** The ruleset's
   bypass actors can, and a `pending` readiness is not a judgement about a red
   lane: it skips lanes that have not reported yet. #11947 merged 14 s after its
@@ -492,7 +528,7 @@ See [oss-fork-boundaries](../system-specs/oss-fork-boundaries.md).
 | `memory-store-seam` | `scripts/check_memory_store_seam.py`, self-test first, with `MEMSTORE_BASE_REF` resolved to the diff base. Enforces explicit store selection on added memory-context calls. The kirocrew-prepare-pr floor runs both commands; the main ratchet lane classifies this as a diff-only gate because its whole-tree backlog is a non-failing report |
 | `docs-lint` | `scripts/docs_lint.py --test` then `scripts/docs-lint.sh`. Every internal link resolves, every doc is reachable from its directory index, every directory holding docs has one, no code comment cites a doc that does not exist, no doc cites a source LINE past the end of the file it names, no module spec names a source file that exists nowhere, every bare harness `H<n>` ID in a source comment names a row in `docs/system-specs/modules/harness-parity.md`, and no doc whose filename is hardcoded in code has been renamed out from under its consumer. Four trees are walked: `docs/`, the packaged `src/kiro_crew/docs/`, `website/docs/`, and the markdown a builtin app ships under `src/kiro_crew/apps/builtins/`. Plus the fact checks below, behind a shrink-only baseline |
 | `static-ratchets` | The seven source-only exact-set / exact-count ratchets (error codes, crew-log `exc_info` sites, PID readers, fleet-routing parity, security posture, backend cards, fold catalogue), run with `-n 4 --no-cov`. They also stay in the backend shards; this job only returns the verdict in about a minute instead of after a 20-40 min shard |
-| `flake-pattern-ratchet` | `test/test_flake_pattern_ratchet.py`, its detector and base-resolver self-tests first. Holds every test file a change touches to its own count of flake-shaped sites at the change's merge-base (see the [Determinism contract](../system-specs/common/testing-conventions.md#determinism-contract-read-this-first)). The ratchet also runs in the backend shards (depth-2 checkout), but that verdict arrives after a 20-40 min shard and a shard with an unreadable base warns `compared nothing` and passes. This job checks out depth 2 so the merge commit's first parent, the base this tree was merged onto, is readable to the ratchet's own resolver, answers in about a minute ahead of the matrix, and turns a `compared nothing` run into a red: a gate that compared nothing is not a pass |
+| `flake-pattern-ratchet` | `test/test_flake_pattern_ratchet.py`, its detector and base-resolver self-tests first. Holds every test file a change touches to its own count of flake-shaped sites at the change's merge-base (see the [Determinism contract](../system-specs/common/testing-conventions.md#determinism-contract-read-this-first)). The ratchet also runs in the backend shards (depth-2 checkout), but that verdict arrives after a 20-40 min shard and a shard with an unreadable base warns `compared nothing` and passes. This job checks out depth 2 so the merge commit's first parent, the base this tree was merged onto, is readable to the ratchet's own resolver, answers in about a minute ahead of the matrix, and turns a `compared nothing` run into a red: a gate that compared nothing is not a pass. The job's last step, `scripts/net_strict_changed.py`, runs only the test files the change adds or changes with `KIROCREW_NET_STRICT=1` and writes any that reach past loopback to a report file under `$RUNNER_TEMP` (the step runs as the unprivileged user, which cannot write `$GITHUB_STEP_SUMMARY`); the next step publishes the file to the job summary under the runner identity. It is warn-only (`continue-on-error`), skips when no test file changed, ignores deleted files, and hands the file names to pytest as an argument list |
 
 Each of these runs its own self-test in the same step, ahead of the real check. A
 gate that has silently stopped matching reads as a green signal, which is worse than
@@ -1002,6 +1038,119 @@ label. Boot-matrix rollback restores `runs-on: ${{ matrix.os }}`. Keep the test
 arguments and coverage unchanged. A rejected webhook leaves a job queued before
 its timeout starts; diagnose or roll back rather than raising that timeout.
 
+### Larger runners for the review lanes and CodeQL
+
+Fourteen `runs-on` sites draw on the `kirocrew-runners` larger-runner group
+rather than `ubuntu-latest`: the six fork review lanes (`fork-opus-review`,
+`fork-gpt-review`, `fork-first-principles-review`, `fork-design-review`,
+`fork-ux-review`, and all three jobs of `fork-security-scope-review`), the five
+same-repo review lanes (`codex-review`, `claude-review`,
+`first-principles-review`, `design-review`, `ux-review`), and `codeql.yml`.
+
+**Why the fork lanes, and why their spend is permanent.** Fork work cannot move
+to the CodeBuild fleet, and the obstruction is structural rather than unfinished
+work: registering a CodeBuild-hosted runner needs a GitHub App installation
+credential carrying `Administration:write`, so no such project can hold a
+zero-permission role, and the `workflow_job` webhook payload carries no fork
+indicator (`head_branch` and `head_sha`, never `head_repository`), so the AWS
+side cannot filter fork work out. Every fork pull request therefore goes to a
+hosted runner by design, which makes a larger runner the only capacity source
+that can take it.
+
+A larger runner satisfies these lanes' isolation requirement the same way
+`ubuntu-latest` does. It is GitHub-managed and ephemeral, and the runner itself
+carries no AWS role, CodeConnections connection or App installation credential,
+so it cannot reach the signing keys or the CDN bucket. Each review job still
+obtains the same short-lived, Bedrock-only OIDC credential it obtained on
+`ubuntu-latest`, through the same `id-token: write` and
+`secrets.AWS_BEDROCK_ROLE_ARN` it used there; moving the job does not widen,
+narrow or re-scope that credential.
+
+**Why CodeQL.** It is the largest single editable `runs-on` in the repository,
+and it already excludes forks through the `Analyze` job's own `if`. Its load is
+also permanent for an unrelated reason: GitHub's CodeQL default setup, which
+this workflow replaced, is off, so there is no second scan to fall back to.
+
+**Every lane moved here can hold merges, so treat any stuck run as an immediate
+rollback.** `pr-readiness.yml` resolves them all through one per-lane loop:
+`claude-review.yml`, `codex-review.yml`, `design-review.yml`, `ux-review.yml`,
+`first-principles-review.yml` and CodeQL sit in `workflow_specs` on the
+same-repo path, and on a fork pull request the fork lanes are read as
+check-runs, where a verdict that has not posted yet counts as pending. A job
+waiting for a runner is therefore recorded as pending rather than skipped --
+SKIPPED is a resolved answer, which is what `codeql.yml`'s comment about a
+skipped `Analyze` job refers to -- so it keeps the required `PR Readiness`
+status pending and holds every merge for up to the 24-hour queue timeout.
+CodeQL has no second scan to fall back to either, since GitHub's default setup
+is off. If the group does not admit the repository, or is at its
+`maximum_runners` cap, restore `runs-on: ubuntu-latest` on the affected line at
+once rather than waiting to see whether the queue clears -- for any of the
+fourteen sites, not just CodeQL.
+
+**Nothing gets faster.** A public-repository `ubuntu-latest` is already 4 vCPU
+and 16 GB, and `kirocrew-linux-4-core` is the same CPU and memory with roughly
+ten times the disk, so job durations should not move; only queue position does.
+Larger-runner minutes are billed even on a public repository, where standard
+runners are free and unlimited, so this trades a free-but-queued resource for a
+paid-but-unqueued one drawing on a separate ceiling.
+
+Each site targets the **group**, not the `kirocrew-linux-4-core` workflow label.
+Both forms work, since a larger runner is automatically assigned a label
+matching its name, but this definition has already been renamed once (from
+`kirocrew-release-4-core`) and a group reference survives a rename where every
+label reference would break simultaneously. The group must stay Linux-only:
+group targeting dispatches to any available runner in the group, so adding a
+Windows definition to `kirocrew-runners` would make every one of these jobs
+eligible to land on Windows. A Windows definition belongs in its own group.
+
+**What is deliberately still on `ubuntu-latest`.** `security-scope-review.yml`
+is itself on that lane's own scope surface, so a diff touching it sets
+`in_scope=true` while giving the model no shell, flow or cron surface to propose
+candidates for, and `scope_candidates.py validate` refuses the resulting empty
+`candidates.json` as `CandidateError`, exit 2, by design -- which reds a lane
+`PR Readiness` watches, so moving it needs its own pull request and a
+`/ai-review override scope <head-sha>: <reason>`. And
+`ai-review-human-override.yml` is the mechanism that clears such a red, so it
+does not move in a change that could need it.
+
+**The same-repo lanes are provisional, not permanent.** `codex-review`,
+`claude-review`, `first-principles-review`, `design-review` and `ux-review` are
+about 18 average concurrent slots. Unlike the fork lanes, they have a plausible
+free alternative: a low-permission CodeBuild project, which would make paid
+capacity for them redundant. That option is not being worked at present, so they
+sit here rather than queueing on the shared pool, and the move is a one-line
+revert per file. Treat this as reversible spend and revisit it if that project
+is ever built.
+
+**Capacity.** The definition is capped at `maximum_runners: 100`, a per-runner
+limit established when the runner is created; raising it goes through GitHub
+Support rather than the organization settings page, so it is not self-service.
+**Measure this definition's own peak from the jobs API filtered on
+`runner_group_name` before putting more load on it**, rather than extrapolating
+from the shared pool's peak-to-mean ratio, which is an aggregate a subset's
+burst pattern need not match. Exceeding the cap is not a failure state, just a
+worse one than headroom: jobs queue against our own 100 slots instead of the
+shared pool, and because these lanes feed `PR Readiness` the cost of being
+wrong shows up as slower merges rather than as a broken check.
+
+Rollback is per site and needs no AWS or runner-group change: restore
+`runs-on: ubuntu-latest` on the affected line. A job dispatched to a group that
+does not admit this repository stays queued for up to 24 hours before
+auto-cancelling, so cancel the run and fix the group's repository access rather
+than waiting out the timeout.
+
+**Moving one of these lanes again means updating a ratchet.**
+`test/test_ci_fleet_routing_expression_parity.py` keeps `_PERMANENT_EXCEPTIONS`,
+the set of jobs that must stay off the CodeBuild fleet, and pins each one's
+expected `runs-on` so a silent re-route fails review. Three of the lanes moved
+here are in that set -- `first-principles-review`, `ux-review` and
+`design-review` -- so their expected value lives in `_HOSTED_EXCEPTION_RUNNERS`
+rather than the `ubuntu-latest` default. Staying off the fleet is what that set
+guarantees; a larger runner is still GitHub-hosted, so the isolation contract is
+unchanged and only the pinned value moves. Change a runner on one of those jobs
+without changing the pin and the gate reds with
+`hosted exception changed runner`, which is the ratchet working.
+
 ### macOS is not a pull-request gate any more
 
 A macOS pytest job on the pull-request path waits hours for a hosted `macos-15`
@@ -1016,8 +1165,8 @@ Where the coverage went:
 
 | Lane | Where | Blocking? |
 |---|---|---|
-| `backend-test-macos` (full suite, 5 shards, 4 at a time) | `platform-tests.yml`: called by `nightly.yml` at 06:00 UTC, plus `workflow_dispatch` against any branch | Holds the nightly **publish** jobs, never the builds — the artifacts are the evidence a fixer works from. Maintains one tracking issue (`platform-tests-macos` label) carrying the failing node ids and the pull requests merged in the last 24h |
-| The same suite, on demand | `macos-on-demand.yml`, `pull_request`, calls `platform-tests.yml` against the PR head; a Linux `decide` job runs it when the diff touches a darwin-sensitive path, **or** the PR carries the `ci:macos` label, **or** the head SHA falls in a 1-in-50 sample (`16#${HEAD_SHA:0:8} % 50`, deterministic per commit) (acts immediately -- the workflow listens for `labeled`), **or** an added line in a `*.py`/`*.sh` file uses a Linux-only primitive (`LINUX_ONLY_PRIMITIVES` on the verdict step: `/proc/`, GNU `stat -c`, `O_PATH`, `RLIMIT_AS`, `surrogateescape`), wherever the file lives; an unreadable diff leaves that switch off with a warning. Over those four sits a CEILING: the path, sample and content switches are refused while this lane already holds `LANE_MAX_LIVE_RUNS` (4) live runs of the hosted macOS pool (a run holds one job per shard it has running at once, `min(SHARD_COUNT, max-parallel)`, so the ceiling is expressed in runs but felt in jobs: 4 runs x min(5, 4) = 16 of the calibrated 18, and it moves with either factor), because an uncapped lane can hold nearly every in-progress hosted macOS job, leaving its own shards waiting many hours for a runner while `build.yml` and `release.yml` queue behind it. A capped run is skipped, not queued, so the ceiling bounds demand; 5 shards at max-parallel 4 run in two shard-waves, about 52 minutes a suite against about 27 for one wave, which settles the lane at about four or five verdicts an hour -- a timely verdict for a few pull requests instead of a many-hour one for all of them, with the nightly still covering every merge. The `ci:macos` label is never refused, and neither is a re-run, so a retry cannot turn a red lane into a skip. A fork pull request gets only the label switch: the path, sample and content switches are off for a fork head, and the nightly covers it after merge | Advisory. It is a separate workflow ON PURPOSE: a macOS job inside `ci.yml` holds that workflow's completion even with `continue-on-error`, so it would still hold readiness. Readiness evaluates neither this workflow nor its check |
+| `backend-test-macos` (full suite, 6 shards, 4 at a time) | `platform-tests.yml`: called by `nightly.yml` at 06:00 UTC, plus `workflow_dispatch` against any branch | Holds the nightly **publish** jobs, never the builds — the artifacts are the evidence a fixer works from. Maintains one tracking issue (`platform-tests-macos` label) carrying the failing node ids and the pull requests merged in the last 24h |
+| The same suite, on demand | `macos-on-demand.yml`, `pull_request`, calls `platform-tests.yml` against the PR head; a Linux `decide` job runs it when the diff touches a darwin-sensitive path, **or** the PR carries the `ci:macos` label, **or** the head SHA falls in a 1-in-50 sample (`16#${HEAD_SHA:0:8} % 50`, deterministic per commit) (acts immediately -- the workflow listens for `labeled`), **or** an added line in a `*.py`/`*.sh` file uses a Linux-only primitive (`LINUX_ONLY_PRIMITIVES` on the verdict step: `/proc/`, GNU `stat -c`, `O_PATH`, `RLIMIT_AS`, `surrogateescape`), wherever the file lives; an unreadable diff leaves that switch off with a warning. Over those four sits a CEILING: the path, sample and content switches are refused while this lane already holds `LANE_MAX_LIVE_RUNS` (4) live runs of the hosted macOS pool (a run holds one job per shard it has running at once, `min(SHARD_COUNT, max-parallel)`, so the ceiling is expressed in runs but felt in jobs: 4 runs x min(6, 4) = 16 of the calibrated 18, and it moves with either factor), because an uncapped lane can hold nearly every in-progress hosted macOS job, leaving its own shards waiting many hours for a runner while `build.yml` and `release.yml` queue behind it. A capped run is skipped, not queued, so the ceiling bounds demand; 6 shards at max-parallel 4 run in two shard-waves (4 then 2) of about 25 minutes each, about 50 minutes a suite, which settles the lane at about four or five verdicts an hour -- a timely verdict for a few pull requests instead of a many-hour one for all of them, with the nightly still covering every merge. The `ci:macos` label is never refused, and neither is a re-run, so a retry cannot turn a red lane into a skip. A fork pull request gets only the label switch: the path, sample and content switches are off for a fork head, and the nightly covers it after merge | Advisory. It is a separate workflow ON PURPOSE: a macOS job inside `ci.yml` holds that workflow's completion even with `continue-on-error`, so it would still hold readiness. Readiness evaluates neither this workflow nor its check |
 | Real gateway boot on macOS | `ci.yml`'s `e2e-boot-matrix`, the only job on the push-to-main path; `nightly.yml`'s `pod-scenarios` | Blocking on main / holds nothing in the nightly |
 
 `test/test_macos_platform_tests_gate.py` pins all of it, including the property that
@@ -4285,6 +4434,23 @@ Prior review bodies are never injected. The ledger is nonce-delimited,
 capped at 6,000 bytes, and explicitly untrusted data: it can downgrade the
 repetition of an adjudicated finding class, and it can never
 waive a new defect or authorize a green verdict.
+
+After the ledger, the same step appends a PUSH BUDGET section
+(`.github/review-prompts/gpt-push-budget.md`) once the PR has had three blocked
+pushes. A blocked push is a distinct earlier head that failed a review-lane
+workflow (`codex-review`, `claude-review`, `design-review`, `ux-review`,
+`first-principles-review`, `security-scope-review`) or received a
+`CHANGES_REQUESTED` review; the current head is never counted. A lane run that
+failed for an infrastructure reason or a timeout also counts, so the number is a
+hint, not a measure of review findings. The section asks the reviewer to add one
+`Sites:` line per BLOCKING item and, for a root cause a ruling already fixed
+twice, a `Remedy: narrow or remove the mechanism` line. It never changes an
+item's `Anchor:` line: the security fence in the adjudication step reads that
+line, so re-anchoring a recurring security finding would un-fence it. It is staged from the base commit with no checkout fallback, so it is off
+until the file is on the base. The count is read with GET calls only (the
+workflow holds `actions: read` for it); a count that cannot be read leaves the
+prompt unchanged and prints a notice, and a first-time review is exactly as
+long as before. The Opus lane and `gpt-review-core.md` are unchanged.
 
 GPT makes exactly two GPT calls. Pass 1 discovers candidates across the
 full diff; pass 2 attempts to falsify each candidate and emits the only GPT

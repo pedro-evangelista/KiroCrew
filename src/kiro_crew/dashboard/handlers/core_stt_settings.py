@@ -501,7 +501,7 @@ async def api_stt_config(request: web.Request) -> web.Response:
             # Which of those providers can stream partial results. Served from the
             # backend's own `streaming_providers()` so the Settings UI gates the
             # streaming controls on a CAPABILITY rather than on a hardcoded provider
-            # name — the latter silently hid the toggle when `apple` was added.
+            # name, which would silently hide the toggle for a newly added provider.
             "streaming_providers": list(streaming_providers()),
             "language_codes": _stt_language_codes(cfg.stt),
             "prereqs": prereqs,

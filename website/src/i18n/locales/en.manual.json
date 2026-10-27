@@ -224,7 +224,6 @@
     "kiro_credit_usage_sign_in_type": "Kiro account & credits — balance isn’t available for this sign-in",
     "kiro_credit_usage_config_unreadable": "Kiro account & credits — could not read the backend setting; open to retry",
     "kiro_account_credits": "Kiro account & credits — view usage, manage subscription",
-    "notifications_ask_agent_help": "Leaves this page and opens a new chat with this error's report already filled in, ready for you to send",
     "metrics_card_old_data": "Last updated more than 90 seconds ago",
     "metrics_card_fetch_failed": "The last metrics update failed",
     "metrics_card_cores_one": "{{count}} core",
@@ -1449,6 +1448,9 @@
         "open_in_file_explorer": "Open in File Explorer",
         "open_in_finder": "Open in Finder",
         "show_in_file_manager": "Show in file manager"
+      },
+      "approval": {
+        "trust_this_command": "Trust <mono/>"
       }
     },
     "commandBar": {
@@ -1841,7 +1843,7 @@
       "your_selected_setup_is_ready_in_kiro_crew": "Your selected setup is ready in {{productName}}."
     },
     "appHost": {
-      "not_installed": "\"{{name}}\" is not installed"
+      "not_installed": "{{name}} isn't installed"
     },
     "approvalCard": {
       "approval_no_longer_pending": "This approval has expired or was already decided — the agent is no longer waiting on it.",
@@ -1854,18 +1856,14 @@
     "approvalModePicker": {
       "approval_mode_aria": "Approval mode: {{mode}}",
       "normal_label": "Normal",
-      "normal_tooltip": "{{productName}} asks you before doing anything",
       "normal_desc": "{{productName}} checks with you before doing anything",
       "reads_label": "Reads",
-      "reads_tooltip": "{{productName}} runs read-only shell commands on its own, but asks for everything else",
       "reads_desc": "{{productName}} runs read-only shell commands on its own, but asks for everything else",
       "trust_label": "Trust",
       "chat_mode_hint": "chat mode",
       "trust_scope_tooltip": "Trusted by an app grant for this chat; it expires on its own. Pick Normal in this menu to end it now; the app may grant it again until you turn it off in that app.",
-      "trust_tooltip": "In this chat, {{productName}} works without asking you first",
       "trust_desc": "In this chat, {{productName}} works without asking you first",
       "yolo_label": "YOLO",
-      "yolo_tooltip": "In every chat, {{productName}} works without asking you first",
       "yolo_desc": "In every chat, {{productName}} works without asking you first",
       "configure_duration": "Configure duration",
       "yolo_expiration_until_shutdown": "Stays on until {{productName}} restarts — no timed expiry.",
@@ -2322,6 +2320,13 @@
       "copy": "Copy {{label}} {{branch}}",
       "copy_2": "Copy {{label}}"
     },
+    "secretNameCopy": {
+      "label": "Store the token under this name in Settings > Secrets",
+      "copy": "Copy name",
+      "copied": "Copied",
+      "copy_failed": "Copy failed. Select the name above and copy it yourself.",
+      "ask_agent_about_copy": "Ask the agent about the failed copy"
+    },
     "diffBlock": {
       "added": "added",
       "binary": "binary",
@@ -2587,7 +2592,7 @@
       "provider_github": "GitHub",
       "provider_jira": "Jira",
       "provider_gitlab": "GitLab",
-      "jira_no_credentials": "No Jira credentials configured for this host. Add a jira_auth entry to config.json and set JIRA_API_TOKEN (or JIRA_TOKEN_<hex-host> for multi-host) in your .env file."
+      "jira_no_credentials": "No Jira credentials configured for this host. Add a jira_auth entry to config.json and set JIRA_API_TOKEN (or JIRA_TOKEN_<hex-host> for multi-host) in your .env file. This reader uses a Jira API token and is separate from the Atlassian MCP sign-in; signing in to that MCP server does not configure it."
     },
     "jobForm": {
       "add": "Add",
@@ -2718,6 +2723,9 @@
       "agent_host_cannot_sandbox": "Host can't sandbox",
       "agent_sandbox_turned_off": "Sandbox turned off",
       "sign_in_again_to_continue": "Sign in again to continue.",
+      "relock_ask_owner": "Ask the {{productName}} owner to sign this gateway in again. This notice clears once they do.",
+      "relock_exact_command_hint": "This gateway uses its own copy of Kiro CLI. To sign in again, open the dashboard in a new window or tab: its sign-in screen shows the exact command with a copy button. This window keeps your work.",
+      "relock_run_in_terminal": "Run this in a terminal to sign in again. This notice clears once you do.",
       "sign_in_bundled_hint": "The long path is the desktop app's own copy of Kiro CLI. Run one of these commands exactly as shown.",
       "sign_in_method_note": "Both open a browser to finish signing in. Pick the one that matches your plan — the sign-in page offers a personal Builder ID alongside organization SSO, and a Builder ID carries a smaller set of models.",
       "sign_in_personal_label": "Personal account — Builder ID, Google, or GitHub",
@@ -2983,7 +2991,6 @@
         "show_more_notifications_count_other": "Show {{count}} more notifications"
       },
       "notificationFeed": {
-        "activity_will_appear_here": "Activity will appear here",
         "expand_grouped_notifications": "Expand {{count}} grouped notifications: {{title}}",
         "hide_muted_count": "Hide muted ({{count}})",
         "open_notification": "Open notification: {{title}}",
@@ -3417,7 +3424,7 @@
       "install_restart_timing": "Installing may take several minutes. The app will close and relaunch automatically when the update is complete.",
       "windows_installer_handoff": "A Windows installation window will show progress.",
       "installing_update": "Installing update…",
-      "installing_update_body": "{{productName}} is stopping the local gateway and installing the update. This can take several minutes. It will relaunch automatically.",
+      "installing_update_body": "This can take several minutes. It will relaunch automatically.",
       "install_failed": "Update failed to install",
       "install_failed_body": "The update could not be applied. {{productName}} is restoring the local gateway — you can keep using this version and retry from Settings > About.",
       "back_to_dashboard": "Back to dashboard",
@@ -3676,11 +3683,11 @@
       "trust_all_base_session": "Trust any <mono>{{base}}</mono> command for this session",
       "trust_all_base_today": "Trust any <mono>{{base}}</mono> command until midnight ({{time}})",
       "trust_all_tools_channel": "Trust all tools in this channel — persists across restarts",
-      "trust_this_command": "Trust “<mono>{{cmd}}</mono>”",
-      "trust_this_command_channel": "Trust “<mono>{{cmd}}</mono>” for @{{role}} — until {{productName}} restarts",
-      "trust_this_command_hour": "Trust “<mono>{{cmd}}</mono>” for an hour (until {{time}})",
-      "trust_this_command_session": "Trust “<mono>{{cmd}}</mono>” for this session",
-      "trust_this_command_today": "Trust “<mono>{{cmd}}</mono>” until midnight ({{time}})"
+      "trust_this_command": "Trust <mono>{{cmd}}</mono>",
+      "trust_this_command_channel": "Trust <mono>{{cmd}}</mono> for @{{role}} — until {{productName}} restarts",
+      "trust_this_command_hour": "Trust <mono>{{cmd}}</mono> for an hour (until {{time}})",
+      "trust_this_command_session": "Trust <mono>{{cmd}}</mono> for this session",
+      "trust_this_command_today": "Trust <mono>{{cmd}}</mono> until midnight ({{time}})"
     },
     "multiSelect": {
       "deselect_all": "Deselect all",
@@ -3866,7 +3873,6 @@
       "next": "Next capture",
       "captures": "Captures",
       "capture_n_of_m": "Capture {{n}} of {{m}}",
-      "where_to_find": "Where you’ll see it",
       "turn_on": "Turn this preview on",
       "screenshot_badge": "Screenshot",
       "is_on": "This preview is on — turning it off only hides it; nothing you made is lost"
@@ -3958,6 +3964,10 @@
       "label": "changes need a restart",
       "tooltip": "This setting cannot change while {{productName}} is running. The saved value is kept and applies the next time {{productName}} restarts (Settings → About, or the terminal where you launched it).",
       "schema_unavailable": "Couldn't check whether this setting needs a restart."
+    },
+    "lockedByPolicyBadge": {
+      "label": "Locked by policy",
+      "tooltip": "Your organization's policy controls this setting. A change made here has no effect."
     },
     "pierreEditorImpl": {
       "highlighting_unavailable_with_reason": "Syntax highlighting is unavailable until you reload. Content remains readable. Last failure: {{classification}} (generation {{generation}}, attempt {{attempt}}): {{reason}}"
@@ -5107,7 +5117,6 @@
         "menu_artifacts": "Artifacts",
         "menu_artifacts_desc": "In-session documents & stars",
         "menu_browser": "Browser",
-        "menu_browser_desc": "View a web page or a local dev server",
         "menu_terminal": "Terminal",
         "menu_terminal_desc": "Shell on the gateway host, scoped to this chat",
         "external_terminal_open_settings": "Open Terminal settings",
@@ -5116,15 +5125,10 @@
         "menu_context": "Context breakdown",
         "menu_context_desc": "Context added during this session's turns",
         "menu_files": "Files",
-        "menu_files_desc": "Project file browser with a built-in viewer",
         "menu_links": "Links",
-        "menu_links_desc": "URLs this chat referenced",
         "menu_issues": "Issues",
-        "menu_issues_desc": "Issues mentioned in this session",
         "menu_logs": "Logs",
-        "menu_logs_desc": "Gateway log stream",
         "menu_pins": "Pins",
-        "menu_pins_desc": "Messages you bookmarked in this session",
         "menu_side": "Side Chat",
         "menu_side_desc": "Ask without interrupting the main agent",
         "menu_subagents": "Subagents",
@@ -5416,6 +5420,18 @@
         "copy_failed": "Copy failed",
         "redirecting_the_running_turn_not_yet_confirmed": "Redirecting the running turn — not yet confirmed.",
         "steering": "Steering…",
+        "steer_unsend": "Unsend",
+        "steer_edit": "Edit",
+        "steer_queue_instead": "Queue instead",
+        "steer_take_back_more": "Edit or unsend",
+        "steer_taking_back": "Taking it back…",
+        "steer_retracted_unsend": "You unsent this message",
+        "steer_retracted_edit": "You moved this message back to your message box",
+        "steer_retracted_queue": "You moved this message to the queue",
+        "steer_take_back_busy": "Another message is still on its way. Try again.",
+        "steer_take_back_unsupported": "This agent can't take back a sent message.",
+        "steer_take_back_failed": "Couldn't take it back.",
+        "steer_take_back_unconfirmed": "Couldn't confirm it was taken back. This updates when the agent reaches it.",
         "delivery_pending": "Delivery pending…",
         "turn_ended_before_this_applied_runs_as_its_own_message": "Turn ended before this applied — runs as its own message.",
         "quote_message": "Quote message",
@@ -5741,7 +5757,6 @@
       "mcp_session_no_tools": "Started, but this session got none of its tools. Another server probably uses the same tool names. Rename them with `toolAliases` in the agent spec.",
       "mcp_session_no_tools_also": "Started, but this session got none of their tools (another server probably uses the same tool names; rename them with `toolAliases` in the agent spec): {{names}}",
       "mcp_session_restart_to_load": "{{name}} is missing a credential, or its credential was rejected. Once the credential works, start a new session to load {{name}}.",
-      "mcp_session_source_note": "The list is this agent's configuration; the status beside each name is what this session reported.",
       "mcp_session_started": "Started in this session",
       "message_queued_until_session_ready": "{{error}}. Your message is queued and will be sent when a session is ready — but it is held in this tab only, so if you navigate away or reload you will need to retype it.",
       "message_saved_as_draft": "{{error}}. Your message is saved as a draft in the session you sent it from.{{extra}}",
@@ -6006,9 +6021,6 @@
       "manual_order_unsaved": "Nothing is saved in Manual yet, so new sessions show first. Drag a session to try again.",
       "sorted_by_hand": "Sorted by hand",
       "board_update_failed": "Board update failed",
-      "open_crew_members": "Mates",
-      "open_crew_members_desc": "Opens the Mates page — each member is a standing agent with its own thread.",
-      "open_crew_members_gated_desc": "Opens Settings first, to turn this preview on — the page is not available until you do.",
       "model_list_failed": "Couldn't load the model list. What's shown may be incomplete or out of date.",
       "hidden_folder_count_one": "{{count}} hidden folder",
       "hidden_folder_count_other": "{{count}} hidden folders",
@@ -6300,7 +6312,6 @@
       "disk_usage_unavailable": "Disk usage unavailable"
     },
     "developerPage": {
-      "feature_previews_moved": "Feature Previews moved to Settings > Developer",
       "tabs": {
         "archive": {
           "description": "Rotated/compacted session history (7-day retention)",
@@ -6540,7 +6551,7 @@
       },
       "settings": {
         "title": "Ingestion Settings",
-        "description": "Control how documents are extracted, indexed, and rate-limited. Changes take effect on the next watcher sweep unless noted otherwise.",
+        "description": "Changes apply on the next watcher sweep.",
         "save_failed": "Failed to save knowledge setting",
         "embed_rate_label": "Embedding rate limit",
         "embed_rate_desc": "How many embedding requests per minute when indexing documents into the vector store. Lower values reduce system load but slow down indexing. 0 = unlimited.",
@@ -6799,6 +6810,7 @@
         "registry_help": "{{provider}} is managed by your organization's MCP registry, so there is nothing to fix here. The Kiro CLI loads it when a session starts, and this page cannot show its status. To check it, run kiro-cli mcp list in a terminal.",
         "outdated": "Outdated",
         "outdated_help": "No probe result from the last 30 minutes. Select the refresh button (↻, top right) to check it again.",
+        "not_probed": "Not probed",
         "not_probed_routing_guide": "How to route this server through the MCP gateway",
         "pending_disable_click_to_revert": "Pending: disable (click to revert)",
         "pending_enable_click_to_revert": "Pending: enable (click to revert)",
@@ -6856,7 +6868,8 @@
         "group_lessons_count": "Lessons ({{count}})",
         "group_preferences_count": "Preferences ({{count}})",
         "group_projects_count": "Projects ({{count}})",
-        "group_semantic_count": "Semantic ({{count}})"
+        "group_semantic_count": "Semantic ({{count}})",
+        "partial_notice": "Only part of your memory is drawn here, so search finds only these nodes."
       },
       "memoryTab": {
         "consolidated_sessions_failed": "Summarized {{succeeded}}/{{total}} sessions ({{failed}} failed)",
@@ -7289,7 +7302,7 @@
     "overviewPage": {
       "all_systems_running": "All systems running",
       "connecting": "Connecting…",
-      "kiro_sign_in_moved": "Kiro sign-in moved to Settings > Agent Harness",
+      "memory_developer_link": "Memory graph and internals",
       "reconnecting": "Reconnecting…",
       "stat_cron_jobs": "Cron Jobs",
       "stat_lessons": "Lessons",
@@ -7499,8 +7512,7 @@
       "group_today": "Today",
       "group_yesterday": "Yesterday",
       "group_earlier": "Earlier",
-      "empty_title": "No sessions",
-      "empty_subtitle": "Create one to get started."
+      "empty_title": "No sessions"
     },
     "settings": {
       "mobileLoginCard": {
@@ -7528,12 +7540,16 @@
         "commits_behind_one": "{{count}} commit behind",
         "commits_behind_other": "{{count}} commits behind",
         "updates_managed_by_policy": "Updates for this install are managed by an operator-defined update policy. New versions arrive through the mechanism it defines.",
+        "updates_managed_by_policy_desktop": "A policy on this computer manages updates for this app. New versions arrive through that policy, so {{productName}} doesn't check for updates itself. Ask whoever set this up to change it, or edit security_policy.json.",
         "updates_managed_externally": "Updates for this install are managed by an external package manager. Use that package manager to get new versions.",
         "updates_managed_externally_by": "Updates for this install are managed by {{managedBy}}. Use it to get new versions.",
         "updates_managed_lane": "Updates for this install are managed by an external package manager. To update manually, run the command below in a terminal.",
         "updates_managed_lane_by": "Updates for this install are managed by {{managedBy}}. To update manually, run the command below in a terminal.",
         "automatic_updates_unavailable_dev_build": "Automatic updates are unavailable in this build (development build).",
         "automatic_updates_unavailable_channel": "Automatic updates are unavailable because this release channel has no builds for your platform yet. Switch channels above to receive updates.",
+        "automatic_updates_unavailable_policy_channel": "This {{build}} build can't switch to {{channel}} updates, which your organization's policy requires, so automatic updates are off.",
+        "automatic_updates_policy_channel_download": "<download>Install the {{channel}} app</download> to get updates again. Your settings, chats and files are kept.",
+        "update_channel_requires": "requires {{channel}}",
         "automatic_updates_unavailable_platform": "Automatic updates are unavailable in this build on this platform.",
         "automatic_updates_unavailable_translocated": "Automatic updates are unavailable because macOS is running this app from a temporary read-only copy. Move it to your Applications folder and reopen it.",
         "automatic_updates_unavailable_volume": "Automatic updates are unavailable because this app is running from a read-only disk image. Move it to your Applications folder and reopen it.",
@@ -7587,7 +7603,9 @@
         "automatic_updates": "Update the gateway automatically",
         "gateway_auto_update_unknown_hint": "Whether this switch applies here is known after the first update check, shortly after startup.",
         "gateway_auto_update_mandatory_note": "A policy requires a newer version than this one; when one is available it is installed whatever this switch says.",
-        "gateway_auto_update_description": "Installs a new release once no work is running and restarts the gateway, on installs that can update themselves.",
+        "gateway_auto_update_description": "Restarts the gateway to install a new release once no work is running. When off, it stays on its current version.",
+        "gateway_updates_heading": "Gateway updates",
+        "gateway_auto_update_desktop_context": "The gateway runs your agents and chats. It's installed separately from {{productName}}, so this switch updates it, not this app. It only restarts when no work is active.",
         "nightly": "Nightly",
         "channel_help_show_all": "▸ What's the difference between Stable, Insider and Nightly?",
         "channel_explainer_nightly": "Untested daily builds from main. Expect breakage — useful for trying a fix the day it lands.",
@@ -7632,7 +7650,8 @@
         "app_lane_label": "App",
         "app_lane_title": "The desktop app you installed. Its own version, separate from the service below.",
         "gateway_lane_label": "Gateway",
-        "gateway_lane_title": "The background service that runs your agents and serves this dashboard. The branch and commit chips are its build."
+        "gateway_lane_title": "The background service that runs your agents and serves this dashboard. The branch and commit chips are its build.",
+        "app_updates_heading": "App updates"
       },
       "crewmatesSection": {
         "title": "Mates",
@@ -7760,7 +7779,6 @@
         "background_model": "Background Model",
         "subagent_model": "Subagent Model",
         "model_for_background_lite_heartbeat_work": "Model for background work — title generation, history compaction, and heartbeat polling.",
-        "model_for_spawned_sub_agents": "Model for spawned subagents.",
         "subagent_pin_runtime_cost": "Setting Subagent Model or Subagent Effort to anything but its default runs each subagent in its own process, about 0.55 GB of memory each, which can slow a machine with 16 GB or less. With both on their defaults, subagents can share the chat's process.",
         "role_model_auto_hint": "'Auto' lets the provider pick — it does not inherit your Default Model. Pin a model to run this work on it.",
         "failed_to_save_role_model": "Failed to save role model",
@@ -8864,7 +8882,7 @@
           "webhooks_where": "A new Webhooks page opens from the “Open Webhooks” link that appears on this card in Settings once this is on; it stays out of the sidebar until the page is finished. Turning it off only hides the page again; tokens you created are kept.",
           "webhooks_media_page": "The Webhooks page: token list on the left, the “Let an outside system wake up your agent” setup on the right.",
           "crew_summary": "Mates lists every agent you have and what each is driving now, with a thread per member. Unrelated to “Chat on a crew” below, which is about another machine.",
-          "crew_where": "“Mates” appears in the sidebar under Sessions once this is on; the New menu’s entry opens it, or this card while off.",
+          "crew_where": "“Mates” appears in the sidebar under Sessions once this is on.",
           "crew_media_members": "The Mates page, with one member selected and its activity panel open."
         },
         "crew_members": "Mates",

@@ -5,6 +5,10 @@ import { useMemo, useRef, type MutableRefObject } from 'react'
 import type { AppDispatch } from '../../store'
 import { markGatewayDisconnected } from './gatewayConnectivity'
 
+/** The fold-watch capability this bundle declares on `/api/ws` (see
+ *  `foldWatch.ts`). A wire token, not copy. */
+export const foldDeltaCapability = 'fold_delta.1'
+
 export type LogCallback = ((data: { level: string; msg: string }) => void) | null
 
 /** First reconnect delay; each consecutive failure doubles it. */
@@ -75,7 +79,10 @@ export function useSocketConnection(): SocketConnection {
       // rename, folder move or close. A gateway that predates the frame ignores
       // the parameter and keeps sending full lists, which the router still
       // applies.
-      const ws = new WebSocket(`${proto}//${location.host}/api/ws?caps=slot_patch`)
+      // `fold_delta.1`: this bundle sends `fold_watch` once the gateway says
+      // `fold_hello` (see `foldWatch.ts`). An older gateway ignores it and
+      // keeps sending every board's slot-fold frames.
+      const ws = new WebSocket(`${proto}//${location.host}/api/ws?caps=slot_patch,${foldDeltaCapability}`)
       wsRef.current = ws
       return ws
     },

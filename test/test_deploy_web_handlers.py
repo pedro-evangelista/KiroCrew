@@ -426,7 +426,6 @@ def test_teardown_persistent_manifest_unreachable_returns_502(monkeypatch):
     )
     monkeypatch.setattr(handlers, "get_default_store", lambda: store, raising=False)
 
-    # Make _expire_manifest_best_effort return "unreachable"
     async def _fake_expire(a):
         return "unreachable"
 
@@ -641,7 +640,6 @@ def test_teardown_reaper_present_tombstones(monkeypatch):
     })
     from kiro_crew.deploy import handlers
 
-    # Mock _check_reaper_installed to return True
     monkeypatch.setattr(handlers, "_check_reaper_installed", lambda p, r: True)
 
     # Create a minimal artifact namespace with webapp metadata
@@ -687,10 +685,8 @@ def test_teardown_reaper_absent_returns_409(monkeypatch):
     })
     from kiro_crew.deploy import handlers
 
-    # Mock _check_reaper_installed to return False
     monkeypatch.setattr(handlers, "_check_reaper_installed", lambda p, r: False)
 
-    # Create a minimal artifact
     meta = SimpleNamespace(
         deploy_target=SimpleNamespace(profile="p", region="us-west-2", slug="x"),
         lifecycle=SimpleNamespace(persistent=True),
@@ -742,7 +738,6 @@ def test_do_deploy_local_dir_stages_public_dir(monkeypatch, tmp_path):
         return {"url": "https://fake.cloudfront.net/my-app/"}
 
     monkeypatch.setattr(engine, "deploy", fake_deploy)
-    # Mock _allowed_local_roots to include tmp_path
     monkeypatch.setattr(handlers, "_allowed_local_roots", lambda: [tmp_path])
 
     status, body = _run(handlers._do_deploy({

@@ -1296,6 +1296,16 @@ _WRITE_PROTECTED_HOME_PATHS += [_KIRO_AGENTS_DIR]
 # specs in the agents-dir format, fenced like it. Only gateway handlers write it, directly.
 _KIRO_MATE_AGENTS_DIR = ".kiro/mates/agents"
 _WRITE_PROTECTED_HOME_PATHS += [_KIRO_MATE_AGENTS_DIR]
+# Its siblings: who owns each crewmate file, kit records, revoked approvals, the
+# tool-access record and the migration ledger. Only gateway handlers write them.
+_KIRO_MATE_STATE_LEAVES: tuple[str, ...] = (
+    ".kiro/mates/owners.json",
+    ".kiro/mates/kits",
+    ".kiro/mates/revoked-approvals.json",
+    ".kiro/mates/tool-access.json",
+    ".kiro/mates/migrated.json",
+)
+_WRITE_PROTECTED_HOME_PATHS += list(_KIRO_MATE_STATE_LEAVES)
 
 
 # ── kiro-cli global MCP registry (~/.kiro/settings/mcp.json) ──
@@ -1345,13 +1355,14 @@ _KIRO_CLI_WRITE_TIER_LEAVES: tuple[str, ...] = (
     _KIRO_AGENTS_DIR,
     _KIRO_SETTINGS_MCP_JSON,
     _KIRO_MATE_AGENTS_DIR,
+    *_KIRO_MATE_STATE_LEAVES,
 )
 
 
 # Other harnesses' own permission files: the same threat, anchored like the leaves above.
 _NATIVE_ALLOW_STORE_LEAVES: tuple[str, ...] = native_allow_stores.home_leaves()
 _WRITE_PROTECTED_HOME_PATHS += list(_NATIVE_ALLOW_STORE_LEAVES)
-_native_store_write = native_allow_stores.matches_store  # a project's claude settings
+_native_store_write = native_allow_stores.matches_store  # a project's own harness config
 
 _WRITE_PROTECTED_HOME_PATHS += [
     # Operator-authored panel templates (agent_panel.py). WRITE-protected rather

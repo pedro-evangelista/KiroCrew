@@ -60,7 +60,7 @@ async def api_crons(request: web.Request) -> web.Response:
     # ``created_by`` ``app:<name>`` stamp ``_refuse_foreign_app_job`` reads.
     # Without this the dashboard's polling endpoint would hand an app every
     # job's ``message``, ``last_result``, ``last_error``, ``command`` and
-    # ``script`` -- exactly the run data the per-job gates on this PR protect --
+    # ``script`` -- exactly the run data the per-job gates protect --
     # leaving the trust boundary open on the one route that returns it in bulk.
     # Filtered here so every field below is already scoped. The app-only branch
     # writes one SEL row recording the ownership scoping decision: token-auth

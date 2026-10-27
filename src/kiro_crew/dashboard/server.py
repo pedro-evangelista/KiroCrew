@@ -753,7 +753,6 @@ async def start_dashboard(
     # --- Pending-skill approval notifications ---
     _register_pending_skill_hooks(state)
 
-    # Initialize script hook store
     state._hook_store = ScriptHookStore()
     set_global_hook_store(state._hook_store)
 
@@ -1416,8 +1415,8 @@ async def start_dashboard(
     # NOTE: Even with restore_sessions=false, foldered and pinned sessions are restored
     # so the Explorer tree stays populated.  Users can unpin or remove from folder to dismiss.
     cfg = KiroCrewConfig.load()
-    # Offloaded: this PR gave arming a fail-closed ``approval_modes`` gate, so
-    # ``grant_declared_yolo`` now resolves governance -- an ``iterdir`` + per-file
+    # Offloaded: arming has a fail-closed ``approval_modes`` gate, so
+    # ``grant_declared_yolo`` resolves governance -- an ``iterdir`` + per-file
     # ``stat`` walk of the profiles dir. We are inside ``async def start_dashboard``,
     # so running it inline stalls the gateway's loop, and on slow storage it stalls
     # the heartbeat with it.

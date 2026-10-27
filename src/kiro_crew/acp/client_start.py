@@ -41,6 +41,7 @@ from kiro_crew.acp.client_claude_session import (
     CLAUDE_ACP_FORK_POINT_MIN_VERSION,
     _adapter_version_at_least,
 )
+from kiro_crew.acp.client_native_children import client_capabilities_for
 from kiro_crew.acp.client_spawn_env import (
     KIRO_CLI_BIN,
     KIRO_CLI_SUBCMD,
@@ -77,7 +78,6 @@ from kiro_crew.acp.types import (
     ACP_BACKENDS_PRUNE_UNSTARTABLE_MCP,
     ACP_BACKENDS_RESUME_WITHOUT_LOAD,
     ACP_BACKENDS_SESSION_MCP_ARRAY,
-    ACP_CLIENT_CAPABILITIES,
     KIRO_CLI_CLIENT_APPLICATION,
     METHOD_INITIALIZE,
     METHOD_SESSION_FORK,
@@ -106,6 +106,7 @@ from kiro_crew.sandbox import (
     delegated_workspace_exposes_sealed_target,
 )
 from kiro_crew.security import redact_credentials, redact_exfiltration_urls
+from kiro_crew.slack.team_ids import apply_slack_team_env
 
 if TYPE_CHECKING:
     from kiro_crew.acp.client import AcpClient
@@ -347,6 +348,10 @@ async def _spawn(self: AcpClient) -> None:
             env["KIROCREW_CHANNEL_ID"] = self._channel_id
         else:
             env.pop("KIROCREW_CHANNEL_ID", None)
+        # The workspace the channel lives in, beside the channel, so a hook can
+        # open slack://channel?team=<TEAM>&id=<CHANNEL>. Set when known, popped
+        # otherwise, exactly like the channel id (slack/team_ids.py).
+        apply_slack_team_env(env, self._channel_id)
         # Resolve SSH_AUTH_SOCK dynamically — the gateway's env may be stale
         # after an ssh-agent restart — and KRB5CCNAME to a FILE: ccache (the
         # kernel keyring, the default on some Linux distros, is invisible to
@@ -714,7 +719,7 @@ def _initialize_params(self: AcpClient) -> dict[str, Any]:
     return {
         "protocolVersion": protocol_version,
         "clientInfo": {"name": CLIENT_NAME, "version": CLIENT_VERSION},
-        "clientCapabilities": ACP_CLIENT_CAPABILITIES,
+        "clientCapabilities": client_capabilities_for(self.backend),
     }
 
 

@@ -208,7 +208,6 @@ class TestResourceManagement:
         run.tasks = [Step(index=1, title="T1", description="d")]
         runner._runs["cancel1"] = run
 
-        # Start execution in background
         async def _bg():
             try:
                 await runner._execute_tasks(run, "hk")

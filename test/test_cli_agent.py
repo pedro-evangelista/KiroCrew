@@ -104,7 +104,6 @@ class TestAgentCreate:
         out = capsys.readouterr().out
         assert "Created agent: research" in out
 
-        # Verify persisted to disk
         saved = json.loads(cfg_path.read_text(encoding="utf-8"))
         assert "research" in saved["agents"]
         assert saved["agents"]["research"]["kiro_agent"] == "kirocrew"

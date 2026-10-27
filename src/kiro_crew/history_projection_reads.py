@@ -515,10 +515,9 @@ class TranscriptReadProjection:
             prev_seg_rows = seg_rows
         if complete:
             if not rows:
-                # Segments exist yet no rotate rows parsed — the exact signature
-                # of the live incident where the transcript head went missing.
-                # Loud on purpose: this state should be impossible for a healthy
-                # rotation archive.
+                # Segments exist yet no rotate rows parsed — the signature of a
+                # transcript head gone missing. Loud on purpose: this state should be
+                # impossible for a healthy rotation archive.
                 _HISTORY_LOGGER.warning(
                     "rotated archive for %s: %d segment(s) matched but 0 rows parsed",
                     key,

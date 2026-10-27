@@ -439,6 +439,21 @@ engine instead ([aws-control.md](aws-control.md)).
   retires running identity-store processes (`dashboard/handlers/kas_login.py`), so
   neither a refresh in flight nor a process holding the old access token in memory
   outlives the logout.
+- The dashboard surfaces that NAME the signed-in account read the vault, never
+  `kiro-cli whoami`, whenever the vault is the harness's credential (the KAS bundle
+  route whatever the vault holds, or the relay route with a usable Crew sign-in --
+  the usage poll's `_vault_owns_usage` verdict): the credit reading's `account_type`
+  label and the identity door `fetch_local_identity` both come from
+  `auth/bridge.vault_identity_claims`, one `resolve()` that yields the identity
+  fingerprint and the token-free slot and provider claims together, mapped onto
+  whoami's vocabulary by `dashboard/handlers/kiro_vault_identity.py`. The vault
+  stores no e-mail or portal URL, so a Crew sign-in shows its provider kind (and an
+  enterprise profile's display name from the usage API), not an address. The
+  identity door keeps whoami's three-way answer: `{}` (nothing to inherit) only
+  for a vault `TokenStore.holds_no_identity` proves empty, `None` (unknown) for
+  one that did not read or holds an entry that will not decrypt, so an unreadable
+  vault never proposes the default Builder ID target to an Identity Center
+  operator. Spec: learn-cron-dashboard.md, GET `/api/sessions/usage`.
 - Known limit, by decision: the spawn-time probe (`auth/bridge.vault_holds_identity`)
   accepts a stored identity whose access token is live or which carries a refresh
   token; it cannot know without a network call that an issuer will reject that
@@ -483,9 +498,8 @@ engine instead ([aws-control.md](aws-control.md)).
   kiro-cli login, because the card sits under a switch that also lists Kiro
   CLI. It is deliberately NOT on Settings > Overview and not indexed into
   Settings search: a provider chooser on the landing page read as a required
-  step to every user, first-run installs included. Overview carries only a
-  one-line signpost to the card (`KiroSignInMovedPointer`), rendered while
-  `agent.acp_backend` is `kas`, for the users who read token expiry there. The
+  step to every user, first-run installs included, and Overview carries no
+  signpost to it. The
   switch and card moved from the Developer page (whose sidebar entry is behind
   Developer Mode) to Settings once first-run setup began offering agents other
   than Kiro CLI, so a user who set up with one of those can switch agents later

@@ -1246,7 +1246,7 @@ def test_no_owner_captures_a_name_tests_rebind_on_the_runner() -> None:
     assert {
         "sel",
         "save_slot_off_loop",
-        "_flush_file_changes",
+        "_flush_file_changes_off_loop",
         "_resolve_channel_target",
         "_recovery_delay",
         "_should_suppress_requeue",
@@ -1406,6 +1406,7 @@ _GUARDED_CONSTRUCT_HOMES: dict[str, tuple[str, ...]] = {
     r"capabilities_of\(": (
         "dashboard/chat_turn/model_fallback.py",
         "dashboard/chat_turn/slash_commands.py",
+        "dashboard/chat_turn/tool_approval.py",
         "dashboard/chat_turn/tool_rows.py",
         "dashboard/chat_turn/turn_admission.py",
         "dashboard/chat_turn/turn_spec_hooks.py",

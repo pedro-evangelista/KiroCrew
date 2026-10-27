@@ -218,7 +218,7 @@ async def _call_on_own_session(sessions: Any, prompt: str, model: str) -> str:
         if seen > _MAX_RESPONSE_CHARS:
             raise LlmProtocolError("response exceeded the response ceiling")
 
-    key = f"judge-{uuid.uuid4().hex}"
+    key = f"judge:{uuid.uuid4().hex}"
     provider, _is_new, _resumed = await sessions.get_or_create(
         key, agent=JUDGE_AGENT_NAME, model=model or None
     )

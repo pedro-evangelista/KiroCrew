@@ -44,7 +44,6 @@ class TestRegenerateAndVariants:
         slot.append("user", "hi")
         slot.append("assistant", "hello")
 
-        # Simulate running task
         async def _noop():
             # nosemgrep: kirocrew.test-sleep-as-barrier -- not a barrier: a stand-in task that keeps the slot busy; nothing waits on this sleep
             await asyncio.sleep(10)
@@ -547,6 +546,5 @@ class TestRegenerateAndVariants:
                 )
                 statuses = sorted([r1.status, r2.status])
                 assert statuses == [200, 409], f"Expected one 200 and one 409, got {statuses}"
-        # Cleanup
         if slot.task:
             slot.task.cancel()

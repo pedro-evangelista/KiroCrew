@@ -256,7 +256,7 @@ def test_seed_cmd_emits_sel_audit_on_success(
     assert kw["source"] == "cli"
     assert "fixture='empty'" in kw["resources"]
     # ``target_set=True`` proves we log the presence-flag, not the raw
-    # ``$KIROCREW_HOME`` value (per pre-review finding on leakage).
+    # ``$KIROCREW_HOME`` value, so the log never leaks the path.
     assert "target_set=True" in kw["resources"]
     # Regression guard: the raw target path must NEVER appear in the
     # audit resources string. A future refactor adding

@@ -87,7 +87,6 @@ class ChannelHistory:
             new_buf: deque[HistoryEntry] = deque(buf, maxlen=self._observe_max_entries)
             self._channels[channel_id] = new_buf
 
-        # Load persisted history from disk
         self._load_observe(channel_id)
 
     def unset_observe(self, channel_id: str) -> None:

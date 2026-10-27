@@ -345,7 +345,6 @@ async def _apply_tag_names(
         if room <= 0:
             return True
 
-        # Build case-insensitive lookup
         existing_by_lower: dict[str, dict] = {}
         for t in state._tags:
             name_lower = (t.get("name") or "").lower()

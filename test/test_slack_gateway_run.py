@@ -457,6 +457,79 @@ class TestRunMethod:
         orch._shutdown.assert_awaited_once()
 
 
+class TestRunFreezesBootHeap:
+    """run() freezes the boot heap and turns cyclic GC back on once the socket is bound."""
+
+    @staticmethod
+    async def _run_and_record_freezes(orch, monkeypatch) -> list[tuple[int, int, bool]]:
+        """Drive run() with boot mocked; return (dashboard, api, gc on) per gc.freeze call."""
+        import gc
+
+        import kiro_crew
+
+        for name in ("_init_services", "_start_embeddings", "_auto_migrate_memory"):
+            setattr(orch, name, AsyncMock())
+        for name in ("_init_cron", "_init_heartbeat", "_init_autonudge", "_check_for_updates"):
+            setattr(orch, name, AsyncMock())
+        orch._init_mcp_discovery = MagicMock()
+        orch._init_subagents = MagicMock()
+        orch._init_task_runner = MagicMock()
+        orch._init_dashboard = AsyncMock()
+        orch._init_api_server = AsyncMock()
+        orch._shutdown = AsyncMock()
+        freezes: list[tuple[int, int, bool]] = []
+        # A spy, not the real freeze: freezing would park this worker's whole heap.
+        monkeypatch.setattr(
+            gc,
+            "freeze",
+            lambda: freezes.append(
+                (
+                    orch._init_dashboard.await_count,
+                    orch._init_api_server.await_count,
+                    gc.isenabled(),
+                )
+            ),
+        )
+        was_enabled = gc.isenabled()
+        # What the gateway's console-script entry leaves it in during the boot import.
+        gc.disable()
+        kiro_crew.shutdown_event.set()
+        loop = asyncio.get_running_loop()
+        try:
+            with (
+                patch.object(loop, "add_signal_handler"),
+                patch("kiro_crew.slack.events.init_socket_mode"),
+                patch("kiro_crew.slack.interactions.init"),
+                patch("kiro_crew.slack.events.SeenCache"),
+                patch("kiro_crew.session.cleanup_orphaned_sessions"),
+                patch("kiro_crew.dashboard.handlers._bg_mcp_probe", new_callable=AsyncMock),
+                patch("os._exit"),
+                patch("resource.getrlimit", return_value=(256, 10240)),
+                patch("resource.setrlimit"),
+            ):
+                # flake-ok: run() returns because the shutdown event is set before it starts
+                await orch.run()
+            assert gc.isenabled(), "cyclic GC must be back on once boot is done"
+        finally:
+            kiro_crew.shutdown_event.clear()
+            if was_enabled:
+                gc.enable()
+        return freezes
+
+    @pytest.mark.asyncio
+    async def test_dashboard_boot_freezes_once_after_the_dashboard_binds(self, monkeypatch):
+        orch = _make_orchestrator()
+        freezes = await self._run_and_record_freezes(orch, monkeypatch)
+        # Exactly once, after _init_dashboard was awaited, and before GC is re-enabled.
+        assert freezes == [(1, 0, False)]
+
+    @pytest.mark.asyncio
+    async def test_api_only_boot_freezes_once_after_the_api_server_binds(self, monkeypatch):
+        orch = _make_orchestrator(no_dashboard=True)
+        freezes = await self._run_and_record_freezes(orch, monkeypatch)
+        assert freezes == [(0, 1, False)]
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Tests: _init_api_server
 # ═══════════════════════════════════════════════════════════════════════════

@@ -26,7 +26,7 @@ from kiro_crew.platform.governance_parts.archetypes import (
     ScopedRuleset,
     _compose_controls,
 )
-from kiro_crew.platform.governance_parts.baseline import BASELINE_CONTROLS
+from kiro_crew.platform.governance_parts.baseline import BASELINE_CONTROLS, BASELINE_INNER_LISTS
 from kiro_crew.platform.governance_parts.carriers import (
     SIGNATURE_UNCHECKED,
     Bind,
@@ -124,6 +124,7 @@ _STRUCTURAL_KEYS = frozenset(
         "updates",
         "distribution",
         "fallback",
+        "yolo_max_seconds",
     }
 )
 
@@ -372,6 +373,35 @@ def baseline_controls() -> Mapping[str, object]:
     }
 
 
+@lru_cache(maxsize=1)
+def baseline_inner_lists() -> Mapping[str, Mapping[str, ScopedRuleset]]:
+    """``baseline.BASELINE_INNER_LISTS``, parsed with each scope's catalog matcher."""
+    parsed: Dict[str, Mapping[str, ScopedRuleset]] = {}
+    for scope, lists in BASELINE_INNER_LISTS.items():
+        matchers = SCOPE_CATALOG[scope].scope_matchers
+        parsed[scope] = {
+            name: ScopedRuleset.from_dict(raw, matcher=matchers[name])
+            for name, raw in lists.items()
+        }
+    return parsed
+
+
+def with_inner_baseline(scope: str, control: object) -> object:
+    """*control* with each ``BASELINE_INNER_LISTS`` list it does not name filled in.
+
+    For a remote policy's control in an enterprise build: a policy that names a
+    capability but not one of these inner lists gets the list's baseline, not an
+    open list. Any other control, or one naming every list, is returned as is.
+    """
+    lists = baseline_inner_lists().get(scope)
+    if not lists or not isinstance(control, CapabilityGate):
+        return control
+    missing = {name: rs for name, rs in lists.items() if name not in control.scopes}
+    if not missing:
+        return control
+    return CapabilityGate(enabled=control.enabled, scopes={**control.scopes, **missing})
+
+
 def parse_policy(
     data: Mapping[str, object], *, signature_state: str = SIGNATURE_UNCHECKED
 ) -> GovernanceCeiling:
@@ -409,6 +439,7 @@ def parse_policy(
     raw_updates = data.get("updates")
     if raw_updates is not None and not isinstance(raw_updates, dict):
         raise PlatformCompositionError("security policy 'updates' must be an object")
+    yolo_max_seconds = _parse_yolo_max_seconds(data.get("yolo_max_seconds"))
     raw_distribution = data.get("distribution")
     if raw_distribution is not None and not isinstance(raw_distribution, dict):
         raise PlatformCompositionError("security policy 'distribution' must be an object")
@@ -453,7 +484,23 @@ def parse_policy(
         agentcore_identity_posture=composed_posture,
         agentcore_gateway_url=composed_gateway_url,
         agentcore_workload_name=composed_workload_name,
+        yolo_max_seconds=yolo_max_seconds,
     )
+
+
+def _parse_yolo_max_seconds(raw: object) -> int:
+    """The policy's ``yolo_max_seconds``: a positive whole number, or absent (0).
+
+    Fails closed on any other value: a ``false``, a string or ``0`` that read as
+    "no cap" would silently lift the bound the policy meant to set.
+    """
+    if raw is None:
+        return 0
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+        raise PlatformCompositionError(
+            f"security policy 'yolo_max_seconds' must be a positive integer, got {raw!r}"
+        )
+    return raw
 
 
 def parse_profile(data: Mapping[str, object]) -> Profile:
@@ -500,6 +547,12 @@ def parse_profile(data: Mapping[str, object]) -> Profile:
     # narrower "what an unusable profile falls back to", and a profile declaring its
     # own fallback would be nonsensical. Reject it loudly here (the loader turns this
     # into the deny-all fallback via Validation rule 5).
+    # ``yolo_max_seconds`` is POLICY-ONLY for the mechanical reason ``updates`` is:
+    # it is in _STRUCTURAL_KEYS, so a profile's copy would be skipped in silence.
+    if "yolo_max_seconds" in data:
+        raise PlatformCompositionError(
+            "profiles may not set 'yolo_max_seconds' — the auto-approve cap is policy-only"
+        )
     if "fallback" in data:
         raise PlatformCompositionError(
             "profiles may not set 'fallback' — the unusable-profile fallback is "

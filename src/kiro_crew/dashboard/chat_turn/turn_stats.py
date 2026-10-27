@@ -425,7 +425,7 @@ async def _on_complete(turn: _ChatTurn, event) -> Literal[_Flow.BREAK] | None:
     # off that value: an un-latched `""` would read as "not cancelled"
     # and settle the debt on a turn kiro-cli DISCARDS, so the next warm
     # turn goes out without the history the cancelled prompt carried
-    # (GPT 6.1 F1 — crash-data-loss). Latching here closes that window:
+    # (a data loss). Latching here closes that window:
     # a cancelled completion sets `_stop_reason = STOP_REASON_CANCELLED`
     # before the first await, so the settle correctly stays armed.
     if event.stop_reason:
@@ -688,7 +688,7 @@ async def _on_complete(turn: _ChatTurn, event) -> Literal[_Flow.BREAK] | None:
     #      abnormal-end seam, which — seeing the row already claimed —
     #      records nothing, so the turn's ONLY kirocrew.turn.* sample
     #      is lost. Emitting first makes the sample survive a
-    #      cancelled persist (GPT/Opus terminal-metric finding).
+    #      cancelled persist.
     #   2. The persist sits behind usage_has_billing. A turn that
     #      timed out having billed nothing writes no row, and letting
     #      the row's absence swallow the sample would drop exactly the
@@ -724,7 +724,7 @@ async def _on_complete(turn: _ChatTurn, event) -> Literal[_Flow.BREAK] | None:
         # thread picks up the write cancels that future so the append
         # never lands -- while the claim above already told the
         # abnormal-end seam the row was written, so the seam writes
-        # nothing and the row is lost (GPT 6.1 F1). asyncio.shield runs
+        # nothing and the row is lost. asyncio.shield runs
         # the write as its own task the turn's cancel cannot reach, so
         # the append completes; the CancelledError still propagates
         # afterwards. The claim-before-await also keeps the double-bill
@@ -732,7 +732,7 @@ async def _on_complete(turn: _ChatTurn, event) -> Literal[_Flow.BREAK] | None:
         # cancellation would unwind into the abnormal-end seam with the
         # guard still False and the seam would re-read live stats and
         # bill the turn a second time. Claimed here, the seam sees it
-        # recorded and writes nothing (GPT/Opus double-bill finding).
+        # recorded and writes nothing.
         turn._turn_usage_persisted = True
         # Late backfill: CC reports model only via the `init`
         # system event which arrives after the run starts, so

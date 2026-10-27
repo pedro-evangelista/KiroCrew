@@ -894,6 +894,15 @@ async def run(self: GatewayOrchestrator) -> None:
         self._announce_cron_quarantine()
     else:
         await self._init_api_server()
+    # The socket is bound. Move the boot heap into the permanent generation so
+    # later full collections stop re-scanning it (~150k objects, a 50 ms
+    # stop-the-world pass on the event loop), then turn cyclic GC back on:
+    # `kirocrew gateway` imports with it off (kiro_crew._bootstrap.main).
+    # O(1), and deliberately no gc.collect() first: that is a blocking pass.
+    import gc
+
+    gc.freeze()
+    gc.enable()
     # The dashboard/API socket is bound now. A missing wrapper can take the
     # full pip timeout to repair, so track that work without delaying READY.
     # The task itself catches and logs failures; startup remains available.

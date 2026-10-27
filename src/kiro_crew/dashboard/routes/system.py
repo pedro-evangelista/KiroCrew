@@ -20,6 +20,7 @@ from kiro_crew.constants import env_flag_enabled
 from kiro_crew.dashboard import handlers
 from kiro_crew.dashboard.handlers import redaction as redaction_handlers
 from kiro_crew.dashboard.handlers.tunnel import api_tunnel_status
+from kiro_crew.edition_locks import local_enable_locked
 
 
 def register(app: web.Application) -> None:
@@ -75,9 +76,12 @@ def register(app: web.Application) -> None:
     # restart is valid everywhere and is how a wheel install picks up code a
     # terminal-run installer already replaced on disk.
     app.router.add_post("/api/restart", handlers.api_gateway_restart)
-    # Only expose the simulation endpoint in dev/debug environments
+    # Only expose the simulation endpoint in dev/debug environments. Both are local
+    # developer switches, which an enterprise build ignores (RFC D3).
     _is_dev_env = os.environ.get("KIROCREW_HOME", "").endswith("-dev")
-    if _is_dev_env or env_flag_enabled("KIROCREW_DEV_MODE"):
+    if (_is_dev_env or env_flag_enabled("KIROCREW_DEV_MODE")) and not local_enable_locked(
+        "developer_mode"
+    ):
         app.router.add_post("/api/update/simulate", handlers.api_update_simulate)
     app.router.add_get("/api/sessions", handlers.api_sessions)
     app.router.add_delete("/api/sessions", handlers.api_sessions_clear)

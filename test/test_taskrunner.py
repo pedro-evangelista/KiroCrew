@@ -1174,14 +1174,12 @@ class TestRun:
         assert len(result.tasks) == 2  # 2 decomposed steps
         assert all(s.status == StepStatus.PASSED for s in result.tasks)
 
-        # Check progress file was written
         progress = tmp_path / PROGRESS_FILE
         assert progress.exists()
         content = progress.read_text(encoding="utf-8")
         assert "completed" in content
         assert "Create file" in content
 
-        # Check notifications were sent
         assert any("Task started" in t for t, _ in notifications)
         assert any("Task completed" in t for t, _ in notifications)
 

@@ -147,7 +147,6 @@ class TestGitCoord:
         # work_dir should have been updated to the worktree
         assert run.work_dir == run.worktree_path
 
-        # Cleanup
         await git_coord.finalize(run)
 
     @pytest.mark.asyncio
@@ -1103,7 +1102,6 @@ class TestGitCoord:
 
         await git_coord.init_workspace(run)  # git repo → worktree, git_enabled=True
 
-        # Create a file and commit
         (Path(run.work_dir) / "new.py").write_text("print('hello')")
         step = Step(index=1, title="Add new.py", description="d")
         sha = await git_coord.commit_step(run, step)

@@ -4,7 +4,8 @@ command, and report how the turn ended.
 The three steering channels, the three answers to a full context and the inline
 ``/compact`` done signal, the slash-command memberships (``_kiro.dev`` commands,
 ``/todos``, a locally answered ``/clear``), how a refusal or a terminal provider
-failure is reported, and whether a turn reports what it cost.
+failure is reported, whether a turn reports what it cost, and whether a turn the agent
+starts between prompts is read.
 
 One of the owners of the harness vocabulary in :mod:`kiro_crew.agent_sdk.backends`,
 which re-exports every name defined here and is the import path callers use. Like that
@@ -25,6 +26,19 @@ from kiro_crew.agent_sdk.backends import (
     ACP_BACKEND_OPENCODE,
     ACP_BACKEND_PI,
 )
+
+
+def escape_user_message_markup(text: str) -> str:
+    """Escape delimiters so they cannot occur inside the text they delimit."""
+    return text.replace("</user_message>", "&lt;/user_message&gt;").replace(
+        "<user_message>", "&lt;user_message&gt;"
+    )
+
+
+def wrap_user_message(text: str) -> str:
+    """Wrap escaped text so its echo splits one way and cannot close the model's wrapper."""
+    return f"<user_message>\n{escape_user_message_markup(text)}\n</user_message>"
+
 
 # Backends implementing the ``_session/steer`` extension (mid-turn steer).
 # claude-agent-acp does not implement it, so a steer sent there is answered with
@@ -217,6 +231,33 @@ ACP_BACKENDS_STEERING_REQUEST = frozenset(
 # Not ``ACP_BACKENDS_STEER``: a deny notice cannot ride this verb, because the
 # denial already ended the turn it was meant for.
 ACP_BACKENDS_STEER_CONCURRENT_PROMPT = frozenset({ACP_BACKEND_OPENCODE})
+
+# Backends whose ``_session/steer/clear`` drops the steers the running turn has not
+# read yet and names exactly those, so a pending steer can be taken back. Read by
+# ``supports_steer_retract``; the dashboard's Unsend, Edit and Queue instead on a
+# pending steer exist only on a member.
+#
+# kiro-cli is a member on a LIVE capture against kiro-cli 2.33.1:
+# ``test/fixtures/acp_frames/kiro/steering-clear-live.jsonl``. Two steers sent while
+# a shell call ran were each answered ``{queued: true}`` and echoed as
+# ``AgentExecutionUserMessageQueued``. ``_session/steer/clear`` was answered
+# ``{cleared: true}`` and followed by ``AgentExecutionUserMessageCleared`` naming
+# both, and the turn's answer obeyed neither. A steer sent after the clear was
+# injected and obeyed. The clear drops EVERY pending steer, so the caller sends
+# again the ones it did not mean to take back.
+# ``test/fixtures/acp_frames/kiro/steering-clear-after-inject-live.jsonl`` is the
+# other order: a steer already reported by ``AgentExecutionSteeringInjected`` is not
+# named by a later clear, which names only the steer still pending, and a clear
+# with nothing pending sends no ``AgentExecutionUserMessageCleared`` at all. The
+# answer is the same ``{cleared: true}`` either way, so only that notification is
+# evidence of a drop.
+#
+# KAS is not a member, measured against KAS through kiro-cli 2.33.1
+# (``--agent-engine v3``): its clear answered ``{cleared: true, messageIds: [...]}``
+# naming two steers ``steering_injected`` had already reported, and the turn obeyed
+# both. Its answer and its ``steering_cleared`` name steers the turn already read,
+# so neither can tell a dropped steer from a delivered one.
+ACP_BACKENDS_STEER_RETRACT = frozenset({ACP_BACKEND_KIRO})
 
 # Backends that can serve a MANUAL ``/compact`` (the user-typed slash command).
 # Every member acts on the ``/compact`` prompt that ``AcpProvider.compact()``
@@ -620,3 +661,13 @@ ACP_BACKENDS_REPORT_USAGE = frozenset(
         ACP_BACKEND_GOOSE,
     }
 )
+
+# Backends whose AcpClient reads stdout between turns, so a turn the agent starts
+# on its own (a background task finished) is seen when it happens rather than by
+# the next prompt. A member must stream such a turn while no prompt is in flight
+# AND mark where it ends: claude-agent-acp puts ``_meta["_claude/origin"]`` on the
+# cycle's closing ``usage_update``. A harness without that marker would hold its
+# slot until the stale-turn gate or the prompt timeout, so it stays out until its
+# end signal is known.
+# See docs/request-for-change/rfc-agent-started-turns.md.
+ACP_BACKENDS_AGENT_STARTED_TURNS = frozenset({ACP_BACKEND_CLAUDE})

@@ -1190,7 +1190,7 @@ async def _on_acp_model_access(turn: _ChatTurn, exc, _rejected_id, _access_fb_ca
         # does (visible error card, structural meta so the frontend
         # offers the picker) and end the turn. A bare re-raise here would
         # escape _run_chat to a log-only callback and dead-end the turn
-        # with no card — the exact silent failure this PR fixes.
+        # with no card, a silent failure.
         logger.info(
             "model access fallback: slot %s provider exposes no set_model; "
             "surfacing entitlement error for %r",

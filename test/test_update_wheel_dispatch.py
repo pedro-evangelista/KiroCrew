@@ -645,7 +645,6 @@ class TestUpdateDispatch:
         # The function will call git rev-parse, then git fetch, then git diff.
         # After git diff returns 0 (no new commits), it prints "Already up to date!"
         cs._update()
-        # Verify git commands were issued
         git_calls = [c for c in calls if c[0] == "git"]
         assert any("rev-parse" in c for c in git_calls)
 

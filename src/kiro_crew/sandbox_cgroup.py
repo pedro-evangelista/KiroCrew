@@ -16,9 +16,13 @@ import sys
 import threading
 import time
 import urllib.parse
+from typing import TYPE_CHECKING
 
 from kiro_crew import platform_compat
 from kiro_crew.config.paths import config_dir
+
+if TYPE_CHECKING:
+    from kiro_crew.config.sections_limits import ResourceLimitsConfig
 
 # The single source of the agents-slice name is sandbox_tiers (beside
 # _IN_SANDBOX_MARKER, in the lowest sandbox layer); re-exported below so this
@@ -55,6 +59,15 @@ _CGROUP_DEFAULT_MAX_PROCESSES = 8192  # pids.max counts TASKS (threads), not pro
 # Both grok-build and OpenClaw ship no default CPU quota; fair-share weight is
 # the correct default for agent workloads that include legitimate builds.
 _CGROUP_DEFAULT_CPU_WEIGHT = 50
+
+# MemoryHigh for each agent scope, as a percent of that scope's own MemoryMax.
+# A scope at memory.high=max is never reclaimed on its own: page cache it fills
+# grows until the SHARED slice MemoryHigh, where the kernel throttles every
+# runtime together. 90 lets an anon-heavy single tree (a JVM build) on a small
+# host reach its hard MemoryMax at nearly the same point as with no soft
+# ceiling, while every scope reclaims its own cache first. Override
+# via resource_limits.scope_memory_high_pct; 0 emits no MemoryHigh at all.
+_CGROUP_DEFAULT_SCOPE_MEMORY_HIGH_PCT = 90
 
 # The memory.max default is HOST-PROPORTIONAL, not a flat cap: the agent
 # subprocess tree may occupy up to this fraction of physical RAM before the
@@ -439,7 +452,35 @@ def _cpu_controller_delegated() -> bool:
     return _CPU_DELEGATED
 
 
-def _cgroup_limits_from_config() -> tuple[int, int, int, int]:
+def _read_resource_limits() -> ResourceLimitsConfig | None:
+    """Parse the ``resource_limits`` block once, or ``None`` when unavailable.
+
+    The one config read behind a scope's limits: :func:`cgroup_scope_argv`
+    calls it once per scope start and hands the result to
+    :func:`_cgroup_limits_from_config` and :func:`_scope_memory_high_mb`, so a
+    spawn reads ``config.json`` once. ``None`` (config unreadable) makes both
+    fall back to their module defaults.
+    """
+    try:
+        # circular import: sandbox is a low-level module imported by
+        # config/security consumers — importing kiro_crew.config.loader at
+        # module load would create an import cycle, so it stays function-level
+        # (same pattern as resource_limit_preexec below).
+        from kiro_crew.config.loader import ResourceLimitsConfig, _raw_config
+
+        # One validated read for the whole block. ResourceLimitsConfig.from_raw
+        # is the only place these keys are coerced, and it is what refuses a
+        # fraction, a NaN/Infinity from json.loads, and a non-number before
+        # ``int()`` can raise on them and abort the remaining fields.
+        return ResourceLimitsConfig.from_raw(_raw_config().get("resource_limits"))
+    except Exception:
+        logger.debug("cgroup limits: config unavailable, using defaults")
+        return None
+
+
+def _cgroup_limits_from_config(
+    rl: ResourceLimitsConfig | None = None,
+) -> tuple[int, int, int, int]:
     """Return ``(max_processes, max_memory_mb, cpu_weight, max_cpu_percent)``
     for the cgroup scope.
 
@@ -453,23 +494,17 @@ def _cgroup_limits_from_config() -> tuple[int, int, int, int]:
     (the default) means "no quota property emitted at all" — hard CPU caps
     slow legitimate builds, so unlike the other ceilings this one is off
     unless an operator explicitly sets ``resource_limits.max_cpu_percent``.
+
+    *rl* is an already-parsed block (:func:`_read_resource_limits`); without
+    one this reads the config itself.
     """
     max_procs = _CGROUP_DEFAULT_MAX_PROCESSES
     max_mem_mb = _default_max_memory_mb()
     cpu_weight = _CGROUP_DEFAULT_CPU_WEIGHT
     max_cpu_percent = 0  # opt-in: 0 = emit no CPUQuota
-    try:
-        # circular import: sandbox is a low-level module imported by
-        # config/security consumers — importing kiro_crew.config.loader at
-        # module load would create an import cycle, so it stays function-level
-        # (same pattern as resource_limit_preexec below).
-        from kiro_crew.config.loader import ResourceLimitsConfig, _raw_config
-
-        # One validated read for the whole block. ResourceLimitsConfig.from_raw
-        # is the only place these keys are coerced, and it is what refuses a
-        # fraction, a NaN/Infinity from json.loads, and a non-number before
-        # ``int()`` can raise on them and abort the remaining fields.
-        rl = ResourceLimitsConfig.from_raw(_raw_config().get("resource_limits"))
+    if rl is None:
+        rl = _read_resource_limits()
+    if rl is not None:
         # ``>= 1``, so 0 lands on the default with everything else out of domain:
         # TasksMax=0 / MemoryMax=0M are rejected by systemd and the scope would
         # never start, so this ceiling is never left unset. The SAME two keys
@@ -487,6 +522,31 @@ def _cgroup_limits_from_config() -> tuple[int, int, int, int]:
         # Opt-in: 0 keeps the "emit no CPUQuota" default rather than capping.
         if rl.max_cpu_percent is not None and rl.max_cpu_percent > 0:
             max_cpu_percent = rl.max_cpu_percent
-    except Exception:
-        logger.debug("cgroup limits: config unavailable, using defaults")
     return max_procs, max_mem_mb, cpu_weight, max_cpu_percent
+
+
+def _scope_memory_high_mb(max_mem_mb: int, rl: ResourceLimitsConfig | None) -> int | None:
+    """Return the per-scope ``MemoryHigh`` in MB, or ``None`` to emit none.
+
+    A percent (``resource_limits.scope_memory_high_pct``, default
+    :data:`_CGROUP_DEFAULT_SCOPE_MEMORY_HIGH_PCT`) of *max_mem_mb*, the scope's
+    own ``MemoryMax`` as resolved by :func:`_cgroup_limits_from_config`. ``0``
+    is the off switch: no property, so the scope stays at ``memory.high=max``.
+    Unset, *rl* ``None`` (config unreadable) or anything the parser refuses (outside 0..100, a fraction
+    that truncates to 0, a bool, a string) uses the default. The result is
+    floored at 1 MB -- ``MemoryHigh=0M`` would throttle the scope from its
+    first page -- and never exceeds ``MemoryMax``.
+
+    *rl* is the block :func:`cgroup_scope_argv` already parsed for this scope,
+    so the percent costs no second config read. Kept apart from
+    :func:`_cgroup_limits_from_config` so that function's four-value return,
+    which several readers unpack, stays as it is.
+    """
+    pct = _CGROUP_DEFAULT_SCOPE_MEMORY_HIGH_PCT
+    # Range-checked at the parse site (0..100), so a value that arrives here is
+    # usable as-is.
+    if rl is not None and rl.scope_memory_high_pct is not None:
+        pct = rl.scope_memory_high_pct
+    if pct <= 0:
+        return None
+    return min(max_mem_mb, max(1, max_mem_mb * pct // 100))

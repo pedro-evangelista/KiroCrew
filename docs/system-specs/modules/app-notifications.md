@@ -85,6 +85,8 @@ Channels register lazily on the first push to each declared channel. App lifecyc
 
 System channels are fixed in `notifications.bus.SYSTEM_CHANNELS`, including `system.monitor` (see Per-channel settings). A legacy `DashboardState.notify(kind, ...)` call maps `kind` to `system.<kind>`, falling back to `system.agent`, unless the caller passes `channel=`. `payload_from_legacy` raises `NotificationValidationError` when that override names anything but a system channel, and `NotificationCoordinator.notify` drops such a note with a warning; `test_monitor_notice_channel.py::TestLegacyChannelOverride` pins the override and the rejection.
 
+An approval prompt in a dashboard chat that expires unanswered also posts one `system.agent` bell note (`kind` `agent`, title `turn_dispatch.APPROVAL_EXPIRED_NOTE_TITLE`, body `format_approval_expired_note`) from the runner's timeout branch, so someone who is not looking at the session learns the turn went on without the tool. The body names the tool and the session's display title, never the prompt's agent-authored text, and `meta.slot` gives the detail panel its open-session action. It is not `kind` `approval`, which the feed renders with live Approve and Reject buttons. It carries no `publisher_session`, so a muted session's expiry still notifies. A no-budget decline, where nothing was asked, posts none. `test_dashboard_approval_window.py` pins all three.
+
 ## Per-channel settings
 
 `notifications.settings.ChannelSettings` is state-owned, writes atomically, and loads an invalid settings file as empty defaults. `ChannelSettings.apply` runs in `DashboardState._deliver_note` before append and broadcast, so disk and clients receive the same user view while `NotificationBus` remains policy-free.
@@ -536,6 +538,26 @@ vertical list of at most `BANNER_EXPANDED_MAX` (4) cards plus a "+N more in your
 inbox" line that goes to `/notifications` (through the navigation leave guard) —
 the same place the popover's "Open inbox" goes, so "inbox" names one place. On the mobile breakpoint only the newest card renders,
 full width, with its close visible at rest (no hover on touch).
+
+On the mobile breakpoint the card also goes with a horizontal swipe
+(`components/notifications/SwipeToDismiss.tsx`, wrapped around the card; inert on
+desktop). The gesture is touch-only and calls the same `removeNotes` the close
+control calls, so a swiped note waits unread in the bell exactly as a closed one
+does, and the close stays visible for keyboard and screen-reader users. A touch
+becomes a swipe once it has travelled `SWIPE_DISMISS_SLOP` (10 px) horizontally;
+a touch that first drifts past `SWIPE_DISMISS_SCROLL_SLOP` (8 px) vertically is
+declined for good, the wrapper is `touch-action: pan-y`, and a `pointercancel`
+(the browser took the scroll) snaps the card back, so a vertical scroll is never
+taken. The card follows the finger 1:1 in either direction; a release past
+`SWIPE_DISMISS_DISTANCE` (80 px) dismisses, a shorter one snaps back
+(`transition-transform`, none under `prefers-reduced-motion`), and the click a
+release fires is swallowed for `SWIPE_CLICK_SWALLOW_MS` (350 ms, the drawer's
+own ceiling) so a snapped-back swipe does not also open the note; a cancel arms
+no swallow, and past the window a keyboard activation goes through, since a
+touch that moved past the tap slop may fire no click at all.
+`NotificationBanner.test.tsx` ("swipe to dismiss") pins the threshold, the
+snap-back, the vertical decline, the cancel, the click swallow, the mouse and
+desktop no-ops and the reduced-motion class.
 
 ### Motion
 

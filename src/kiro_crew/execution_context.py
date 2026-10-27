@@ -54,8 +54,7 @@ _VOUCHED_EXECUTIONS: "OrderedDict[tuple[str, str], ExecutionContext]" = OrderedD
 # `_LIVE_EXECUTIONS` above is deliberately NOT bounded by these. It is main's map,
 # written only on the restricted branch and released by that session's own close,
 # and evicting a restricted session's carrier would drop the authority that path
-# reads instead of merely withdrawing this process's word. Bounding it is a
-# separate change to behaviour this PR does not own.
+# reads instead of merely withdrawing this process's word.
 _MAX_VOUCHED_EXECUTIONS = 4096
 _vouched_overflow_reported = False
 _vouched_overflow_count = 0

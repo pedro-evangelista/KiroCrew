@@ -328,12 +328,10 @@ class TestDashboardConfigMergeQueued:
                 )
                 assert resp.status == 200
 
-                # Verify persisted
                 assert cfg_file.exists()
                 saved = json.loads(cfg_file.read_text(encoding="utf-8"))
                 assert saved["dashboard"]["merge_queued_messages"] is True
 
-                # Verify GET reflects the change
                 resp = await client.get("/api/dashboard/config")
                 data = await resp.json()
                 assert data["merge_queued_messages"] is True

@@ -85,7 +85,6 @@ dead-identifier	docs/system-specs/modules/computer-use.md	AddImage
 dead-identifier	docs/system-specs/modules/computer-use.md	AppRepository
 dead-identifier	docs/system-specs/modules/computer-use.md	AppsFolder
 dead-identifier	docs/system-specs/modules/computer-use.md	ignoreDefaultValue
-dead-identifier	docs/system-specs/modules/config.md	taskrunner_main
 dead-identifier	docs/system-specs/modules/dashboard-token-auth.md	deny_audit
 dead-identifier	docs/system-specs/modules/dev-fleet.md	refused_containment
 dead-identifier	docs/system-specs/modules/governance.md	cu_action

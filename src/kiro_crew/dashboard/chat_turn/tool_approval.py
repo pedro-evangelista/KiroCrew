@@ -3,6 +3,7 @@ answers (``_on_permission_request``): the hooks, the trust reads, the grants and
 
 from __future__ import annotations
 
+import functools
 import json
 import time
 from typing import TYPE_CHECKING, Any, Literal
@@ -41,6 +42,8 @@ if TYPE_CHECKING:
         _matches_trusted_pattern,
         _name_grant_refusal_off_loop,
         _validate_tool_name,
+        capabilities_of,
+        is_claude_backend_name,
         logger,
         read_effective_agent,
         redact_credentials,
@@ -312,13 +315,43 @@ def _audit_name_grant_refusal(
     )
 
 
+def _pay_permission_cut(turn: _ChatTurn) -> None:
+    """Cut the segment owed at a permission request, now that a row lands for it."""
+    if turn.assistant_text and not open_construct_at_end(turn.assistant_text):
+        _cut_segment(turn)
+        _turn_flushed_visible_text = True
+        turn._turn_flushed_visible_text = _turn_flushed_visible_text
+
+
 async def _on_permission_request(turn: _ChatTurn, event) -> Literal[_Flow.CONTINUE] | None:
+    """Decide a permission request, cutting the segment only where a row lands.
+
+    The cut is owed, not made: a grant answered with no row (YOLO, session
+    trust, a native crew) leaves the reply running, and cutting there saved one
+    message as several rows with nothing between them. Codex sends a sub-agent's
+    approvals on the parent session in the middle of the parent's message. The
+    slot pays the cut before the first durable row the decision appends, and
+    the interactive card gets it before it is drawn.
+    """
+    slot = turn.slot
+    if turn.assistant_text and not open_construct_at_end(turn.assistant_text):
+        slot._owed_segment_cut = functools.partial(_pay_permission_cut, turn)
+    try:
+        flow = await _decide_permission_request(turn, event)
+    finally:
+        owed = getattr(slot, "_owed_segment_cut", None)
+        slot._owed_segment_cut = None
+    if flow is None and owed is not None:
+        owed()
+    return flow
+
+
+async def _decide_permission_request(turn: _ChatTurn, event) -> Literal[_Flow.CONTINUE] | None:
     """Decide a permission request the turn can answer itself: hooks, trust reads, grants and auto-approve."""
     _deferred_cut_text = turn._deferred_cut_text
     _native_tracker = turn._native_tracker
     _refusal_notices = turn._refusal_notices
     _refusal_reasons = turn._refusal_reasons
-    _turn_flushed_visible_text = turn._turn_flushed_visible_text
     _wt_pending_coding = turn._wt_pending_coding
     client = turn.client
     session_key = turn.session_key
@@ -339,14 +372,12 @@ async def _on_permission_request(turn: _ChatTurn, event) -> Literal[_Flow.CONTIN
     # and the LLM continues with text. Resetting it here was the
     # cause of pills staying in "running" state until the next tool
     # call or message end.
-    # Flush accumulated text as a finalized segment before the
-    # permission flow so the frontend renders them in order. The
-    # same open-construct deferral as the tool-call cut applies: an
-    # approval-gated call (parent or child) that lands inside an
-    # open options marker, fence or widget would otherwise split it
-    # and undo a deferral the tool-call site just made. Like the tool
-    # call, the prompt does not end the reply: the run the wire
-    # redactor still withholds waits for the text after it.
+    # The segment cut before a row this decision lands is owed by
+    # _on_permission_request. The same open-construct deferral as the
+    # tool-call cut applies: an approval-gated call (parent or child)
+    # that lands inside an open options marker, fence or widget would
+    # otherwise split it and undo a deferral the tool-call site just
+    # made.
     _open_construct = open_construct_at_end(turn.assistant_text)
     if turn.assistant_text and _open_construct:
         _deferred_cut_text = turn.assistant_text
@@ -356,10 +387,6 @@ async def _on_permission_request(turn: _ChatTurn, event) -> Literal[_Flow.CONTIN
             slot.key,
             _open_construct,
         )
-    elif turn.assistant_text:
-        _cut_segment(turn)
-        _turn_flushed_visible_text = True
-        turn._turn_flushed_visible_text = _turn_flushed_visible_text
     _pre_tool_hooks_fired = False
     # "Not applied — approve this command explicitly" notices from a
     # rung that declined its grant. Held until the request actually
@@ -733,7 +760,15 @@ async def _on_permission_request(turn: _ChatTurn, event) -> Literal[_Flow.CONTIN
     # parent turn. Deny-by-default (CWE-1188): with no active crew this
     # predicate is False no matter the trust flags, so the tool falls
     # through to the normal trust gate below, then _on_permission_prompt's card.
-    if _native_crew_should_auto_approve(_native_tracker, state, slot) and _child_grant_eligible:
+    # The claude backend never takes this path. Its permission requests do
+    # not say which session sent them, so an open child card cannot tell a
+    # child's request from the parent's, and the parent's own tool calls
+    # would be approved with no card.
+    if (
+        not is_claude_backend_name(capabilities_of(client).backend)
+        and _native_crew_should_auto_approve(_native_tracker, state, slot)
+        and _child_grant_eligible
+    ):
         logger.debug(
             "Native crew auto-approve: %r (request_id=%s)",
             _safe_native_crew_debug_title(event.title),

@@ -14,7 +14,6 @@ from __future__ import annotations
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeoutError
 from pathlib import Path
 from unittest import mock
 
@@ -1345,28 +1344,20 @@ class TestEpisodicCRUD:
         finally:
             store.close()
 
-    def test_has_episodic_text_waits_for_store_lock(self, tmp_path: Path) -> None:
+    def test_has_episodic_text_does_not_wait_for_store_lock(self, tmp_path: Path) -> None:
+        """The lookup reads on a pooled read connection, so a thread holding the
+        writer lock does not hold it up; inside the lock it stays on the shared
+        connection and still answers."""
         store = VectorMemoryStore(db_path=tmp_path / "mem.db")
         store.init()
         text = "Lock-safe episodic memory text lookup."
         assert store.write_episodic(text)
-        lookup_started = threading.Event()
-
-        def lookup() -> bool:
-            lookup_started.set()
-            return store.has_episodic_text(text)
-
         try:
             with ThreadPoolExecutor(max_workers=1) as executor:
                 with store._db_lock:
-                    future = executor.submit(lookup)
-                    assert lookup_started.wait(timeout=5)
-                    with pytest.raises(FutureTimeoutError):
-                        future.result(
-                            timeout=0.1
-                        )  # flake-ok: timeout IS the assertion; proves future cannot complete while the db lock is held
-                wait_until(future.done)
-                assert future.result()
+                    future = executor.submit(store.has_episodic_text, text)
+                    assert future.result(timeout=30)
+                    assert store.has_episodic_text(text)
         finally:
             store.close()
 
@@ -1451,7 +1442,8 @@ class TestEpisodicCRUD:
         ctx = store.get_episodic_context(query_text="topic")
         # With limit=2, at most 2 entries should appear
         assert ctx, "Expected non-empty episodic context"
-        assert ctx.count(". ") <= 2
+        # Count numbered entry lines, not every ". ": the header holds sentences too.
+        assert sum(1 for line in ctx.splitlines() if line[:1].isdigit()) <= 2
 
 
 class TestEpisodicInjectionScreening:

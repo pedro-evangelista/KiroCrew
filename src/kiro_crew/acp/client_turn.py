@@ -1,8 +1,9 @@
 """Run an ``AcpClient`` prompt turn and dispatch the frames it reads.
 
-The kiro prompt loop, ``send_message`` and ``send_message_stream``, ``stream_events``, the frame classifier
-and dispatcher, the prompt response reader, the opencode shell-permission deferral and the liveness
-consult.
+The kiro prompt loop, ``send_message`` and ``send_message_stream``, ``stream_events`` and
+``stream_unsolicited``, the frame classifier and dispatcher, the prompt response reader, the
+opencode shell-permission deferral, the liveness consult and the redaction of a Claude native
+child's events, with the flush of their held text for a turn cut short.
 
 Each function here whose first parameter is ``self`` is an ``AcpClient`` method: the
 class binds it by name, so it reads and writes the session's own state on the instance,
@@ -11,7 +12,7 @@ and a patch of the method on the class or on an instance reaches every caller.
 Instance fields written: ``_active_run_id``, ``_active_tool_calls``, ``_between_turn_credits``, ``_cancelled``,
 ``_claude_compaction_pending``, ``_codex_compaction_pending``,
 ``_compaction_failed_at``, ``_compaction_failed_turn``, ``_last_stop_reason``,
-``_oauth_emitted_servers``, ``_observed_tool_calls``, ``_permission_options``,
+``_native_child_redactors``, ``_oauth_emitted_servers``, ``_observed_tool_calls``, ``_permission_options``,
 ``_prompt_or_tool_seen``, ``_skill_reads``, ``_stale_eligible``,
 ``_steers_awaiting_echo``, ``_tool_call_diff_path``, ``_tool_call_harness_tool_name``,
 ``_tool_call_identity_unreadable``, ``_tool_call_input_redacted``,
@@ -20,8 +21,8 @@ Instance fields written: ``_active_run_id``, ``_active_tool_calls``, ``_between_
 ``_tool_dispatched``, ``_turn_done``, ``last_prompt_stats``.
 
 Instance fields read: ``_agent_accepts_image``, ``_buffer``, ``_last_activity``, ``_liveness_oracle``,
-``_permission_gate_events``, ``_pid``, ``_process``, ``_session_id``, ``_steer_turn``,
-``_turn_lock``.
+``_permission_gate_events``, ``_pid``, ``_process``, ``_sel_settled_tool_calls``,
+``_session_id``, ``_steer_turn``, ``_turn_lock``.
 """
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ from kiro_crew.acp.client_timeouts import (
     _TOOL_STALL_TIMEOUT,
     _effective_prompt_timeout_async,
 )
-from kiro_crew.acp.client_transport import _is_safe_oauth_url
+from kiro_crew.acp.client_transport import _AGENT_STARTED_REQUEST_ID, _is_safe_oauth_url
 from kiro_crew.acp.client_turn_control import format_command_result
 from kiro_crew.acp.elicitation import is_elicitation_request
 from kiro_crew.acp.liveness import EVIDENCE_SAMPLING, VERDICT_WORKING, consult_offloaded
@@ -87,6 +88,7 @@ from kiro_crew.acp.types import (
     METHOD_REQUEST_PERMISSION,
     METHOD_SESSION_UPDATE,
     METHOD_SUBAGENT_LIST_UPDATE,
+    STOP_REASON_CANCELLED,
     STOP_REASON_COMPACTION_FAILED,
     STOP_REASON_END_TURN,
     TERMINAL_TOOL_STATUSES,
@@ -94,7 +96,7 @@ from kiro_crew.acp.types import (
     JsonRpcMessage,
 )
 from kiro_crew.executors import subprocess_executor
-from kiro_crew.security import redact_credentials, redact_exfiltration_urls
+from kiro_crew.security import StreamRedactor, redact_credentials, redact_exfiltration_urls
 
 if TYPE_CHECKING:
     from kiro_crew.acp.client import AcpClient
@@ -119,6 +121,64 @@ def _is_tool_interrupted_marker(chunk: str) -> bool:
     return chunk.strip() == _TOOL_INTERRUPTED_MARKER
 
 
+def _redact_native_child_events(self: AcpClient, events: list[AcpEvent]) -> list[AcpEvent]:
+    """Redact a Claude native child's events (``client_native_children``) before the yield.
+
+    A child's text streams through that child's own ``StreamRedactor``, as the
+    parent's answer does at its sink: a chunk redacted alone would let a credential
+    split across two chunks through. When a roster reports a child done or
+    failed, the tail its redactor held back is flushed into one more activity event
+    placed before that roster, so the card's text is whole when the card closes. A
+    tool title is redacted whole, as a kiro-cli child's is below.
+    """
+    out: list[AcpEvent] = []
+    for event in events:
+        if event.kind == EVENT_SUBAGENT_LIST:
+            for row in event.subagents or []:
+                sid = row.get("sessionId")
+                if sid not in self._native_child_redactors or row["status"]["type"] == "working":
+                    continue
+                tail = self._native_child_redactors.pop(sid).flush()
+                if tail:
+                    out.append(
+                        AcpEvent(kind=EVENT_SUBAGENT_ACTIVITY, sub_session_id=sid, text=tail)
+                    )
+        elif event.kind == EVENT_SUBAGENT_ACTIVITY:
+            if event.title:
+                event.title, _ = redact_exfiltration_urls(event.title)
+                event.title, _ = redact_credentials(event.title)
+            if event.text:
+                sid = event.sub_session_id
+                if sid not in self._native_child_redactors:
+                    self._native_child_redactors[sid] = StreamRedactor()
+                event.text = self._native_child_redactors[sid].feed(event.text)
+                if not event.text and not event.tool_call_id:
+                    continue
+        out.append(event)
+    return out
+
+
+def flush_native_child_text(self: AcpClient) -> list[AcpEvent]:
+    """The text every Claude child's redactor still holds, flushed as activity events.
+
+    For a turn cut short: the roster that flushes a child's tail never arrives, and
+    the cards close. ``_dispatch_events`` calls this before a Stop's ``cancelled``
+    completion and before a compaction-failed one, since a completion closes every
+    card; the dashboard's release calls it for a turn that gets no completion (a
+    cancelled task, a timeout, a provider error). Claude Code stops its subagents at
+    an interrupt, so nothing will complete the held text. Every redactor is flushed
+    and dropped. A turn that ends normally does not call this: a background child
+    keeps running into the next turn, and its redactor must keep the held text.
+    """
+    out = [
+        AcpEvent(kind=EVENT_SUBAGENT_ACTIVITY, sub_session_id=sid, text=tail)
+        for sid, redactor in self._native_child_redactors.items()
+        if (tail := redactor.flush())
+    ]
+    self._native_child_redactors.clear()
+    return out
+
+
 # ── Prompt Loop Helpers ──
 
 
@@ -136,6 +196,7 @@ def _process_message(self: AcpClient, msg: JsonRpcMessage, req_id: int) -> str:
         return "steer_answer"
 
     if msg.is_method(METHOD_REQUEST_PERMISSION):
+        self._note_asked_tool_call(msg)
         return "permission"
 
     if msg.is_method(METHOD_SESSION_UPDATE):
@@ -639,6 +700,7 @@ async def send_message_stream(
 
     req_id = await self._send_prompt(message)
     self.last_prompt_stats = self.last_prompt_stats.carry_over()
+    self._reset_native_child_turn()
     # Credits held between turns (see ``_track_metadata``): billed here, once.
     self.last_prompt_stats.credits += getattr(self, "_between_turn_credits", 0.0)
     self._between_turn_credits = 0.0
@@ -686,6 +748,10 @@ async def send_message_stream(
             elif action == "server_request_unknown":
                 await self._reject_unknown_server_request(msg)
             elif action == "update":
+                # A native child's lifecycle, text and side frames are not this
+                # turn's answer; this API yields str, so their events are dropped.
+                if self._native_child_events(msg)[1]:
+                    continue
                 self._track_usage_update(msg)
                 self._note_background_launch(msg)
                 # Apply the codex compaction state change; this API yields
@@ -780,6 +846,45 @@ async def stream_events(
             yield event
 
 
+async def stream_unsolicited(
+    self: AcpClient, timeout: float | None = None
+) -> AsyncIterator[AcpEvent]:
+    """Yield the events of a turn the agent started on its own, sending nothing.
+
+    Yields nothing when no such turn is pending, or when a prompt is in
+    flight: that prompt's turn reads those frames as its own. A prompt started
+    while this stream is open waits until it closes.
+    """
+    timeout = await _effective_prompt_timeout_async(timeout)
+    gate = self._agent_turn_gate
+    if gate is None or not self._agent_turn_pending():
+        return
+    async with gate:
+        # Checked under the gate, so a prompt that started meanwhile is seen.
+        if (
+            self._prompts_in_flight
+            or not self._agent_turn_pending()
+            or not self._turn_done.is_set()
+        ):
+            return
+        self._cancelled = False
+        self._turn_done.clear()
+        try:
+            async with aclosing(
+                self._dispatch_events(_AGENT_STARTED_REQUEST_ID, timeout)
+            ) as events:
+                async for event in events:
+                    yield event
+        finally:
+            # _dispatch_events leaves _prompt_loop to the async-gen finalizer, so
+            # its finally, which sets _turn_done, can run after this stream
+            # closes; the gate stays shut until it has released _turn_lock.
+            async with self._turn_lock:
+                pass
+            # Also when the read ended before _prompt_loop's own finally was armed.
+            self._turn_done.set()
+
+
 async def _dispatch_events(
     self: AcpClient,
     req_id: int,
@@ -789,6 +894,7 @@ async def _dispatch_events(
 ) -> AsyncGenerator[AcpEvent, None]:
     """Shared event dispatch loop for prompts and commands."""
     self.last_prompt_stats = self.last_prompt_stats.carry_over()
+    self._reset_native_child_turn()
     # Credits held between turns (see ``_track_metadata``): billed here, once.
     self.last_prompt_stats.credits += getattr(self, "_between_turn_credits", 0.0)
     self._between_turn_credits = 0.0
@@ -805,6 +911,7 @@ async def _dispatch_events(
     self._tool_call_diff_path.clear()
     # Reset the per-turn observed-tool-call bookkeeping (see __init__).
     self._observed_tool_calls.clear()
+    getattr(self, "_sel_settled_tool_calls", set()).clear()
     # Clear stale permission options so an aborted/cancelled request from
     # a prior turn cannot leak into this one (memory + correctness).
     self._permission_options.clear()
@@ -891,6 +998,13 @@ async def _dispatch_events(
             self._turn_done.set()
             for _injected in _consumed:
                 yield AcpEvent(kind=EVENT_STEER_CONSUMED, text=_injected)
+            if reason == STOP_REASON_CANCELLED:
+                # A Stop: Claude Code stops its subagents at the interrupt, and
+                # the completion closes every card, so the text a child's
+                # redactor holds goes on its card first. The flush already
+                # redacted it.
+                for _held in self.flush_native_child_text():
+                    yield _held
             yield AcpEvent(
                 kind=EVENT_COMPLETE,
                 stop_reason=reason,
@@ -964,6 +1078,14 @@ async def _dispatch_events(
             # Answered before the turn's own terminal: kept for the settle.
             self._steer_turn.answers[msg.id] = (msg, False)
         elif action == "update":
+            # A native child's roster and activity come first: a child's tool
+            # frame continues below after its activity prefix, while its
+            # lifecycle, text and side frames are never this turn's own.
+            _child_events, _child_consumed = self._native_child_events(msg)
+            for _child_event in self._redact_native_child_events(_child_events):
+                yield _child_event
+            if _child_consumed:
+                continue
             self._track_usage_update(msg)
             self._note_background_launch(msg)
             # pi's consumed notification for a steer is the gate extension's own
@@ -1077,6 +1199,8 @@ async def _dispatch_events(
                 # unless audit_source is set.
                 self._skill_reads.credit(tool_result_event)
                 await self._maybe_fire_post_tool_hooks(tool_result_event)
+                # A claude ``auto`` call that never asked gets its SEL row here.
+                await self._maybe_audit_unasked_tool_call(tool_result_event)
                 self._tripwire_spec_disabled_tool(tool_result_event)
                 yield tool_result_event
             # claude-agent-acp emits a separate `tool_call_update` carrying
@@ -1260,6 +1384,10 @@ async def _dispatch_events(
             # compaction-status path; this only ends the turn.
             self._compaction_failed_turn = False
             self._last_stop_reason = STOP_REASON_COMPACTION_FAILED
+            # The abandoned turn's completion closes every card, so the text a
+            # child's redactor holds goes on its card first, as for a Stop.
+            for _held in self.flush_native_child_text():
+                yield _held
             yield AcpEvent(
                 kind=EVENT_COMPLETE,
                 stop_reason=STOP_REASON_COMPACTION_FAILED,
@@ -1322,7 +1450,9 @@ async def _send_prompt(
 
 async def _read_prompt_response(self: AcpClient, req_id: int, timeout: float) -> str:
     output: list[str] = []
+    getattr(self, "_sel_settled_tool_calls", set()).clear()
     self.last_prompt_stats = self.last_prompt_stats.carry_over()
+    self._reset_native_child_turn()
     # Credits held between turns (see ``_track_metadata``): billed here, once.
     self.last_prompt_stats.credits += getattr(self, "_between_turn_credits", 0.0)
     self._between_turn_credits = 0.0
@@ -1366,6 +1496,9 @@ async def _read_prompt_response(self: AcpClient, req_id: int, timeout: float) ->
         elif action == "server_request_unknown":
             await self._reject_unknown_server_request(msg)
         elif action == "update":
+            # See send_message_stream: a native child's own frames are not the answer.
+            if self._native_child_events(msg)[1]:
+                continue
             self._track_usage_update(msg)
             self._note_background_launch(msg)
             # See send_message_stream: settle the codex compaction for the
@@ -1410,6 +1543,7 @@ async def _read_prompt_response(self: AcpClient, req_id: int, timeout: float) ->
             if tool_result_event:
                 self._skill_reads.credit(tool_result_event)
                 await self._maybe_fire_post_tool_hooks(tool_result_event)
+                await self._maybe_audit_unasked_tool_call(tool_result_event)
                 self._tripwire_spec_disabled_tool(tool_result_event)
         elif action == "metadata":
             self._track_metadata(msg)

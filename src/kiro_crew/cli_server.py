@@ -209,7 +209,13 @@ def _file_delivery_approve() -> None:
 
 
 def _status(args: argparse.Namespace) -> None:
-    """Query the running gateway for stats, or print offline message."""
+    """Query the running gateway for stats, or print offline message.
+
+    Exits 1 when nothing answers the resolved port (a refused connection), so a
+    script can gate on the exit code instead of parsing stdout. Every state in
+    which a gateway answers -- stats, token auth, an HTTP error, a busy timeout
+    or an unexpected body -- exits 0.
+    """
     port = resolve_client_port(getattr(args, "port", None))
     url = f"http://127.0.0.1:{port}/api/status"
     try:
@@ -236,6 +242,7 @@ def _status(args: argparse.Namespace) -> None:
         else:
             print("Kiro Crew gateway is not running.")
             print("  Start it with: kirocrew gateway")
+            sys.exit(1)
         return
     except Exception:
         print("Kiro Crew gateway is running but returned an unexpected response.")

@@ -225,7 +225,6 @@ src/kiro_crew/metrics/recorder.py
 src/kiro_crew/notifications/resource_pressure.py
 src/kiro_crew/perf_sampler.py
 src/kiro_crew/pod/launchd.py
-src/kiro_crew/publish_governance.py
 src/kiro_crew/publish_sync.py
 src/kiro_crew/sel.py
 src/kiro_crew/service/apparmor.py
@@ -405,10 +404,8 @@ test/test_dashboard_file_io.py
 test/test_dashboard_files_coverage.py
 test/test_dashboard_no_legacy.py
 test/test_dashboard_route_table.py
-test/test_dashboard_server_coverage.py
 test/test_dashboard_sessions_memory.py
 test/test_dashboard_sessions_search.py
-test/test_dashboard_start_site.py
 test/test_dashboard_themes_coverage.py
 test/test_dashboard_worktree_coverage.py
 test/test_dashboard_ws_offloop_fanout.py

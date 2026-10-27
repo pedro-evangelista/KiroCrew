@@ -277,6 +277,7 @@ if TYPE_CHECKING:  # names this module re-exported from other modules
     from kiro_crew.hooks import safe_read_file_bytes_with_identity  # noqa: F401
     from kiro_crew.hooks import stat_identity  # noqa: F401
     from kiro_crew.messaging.link import is_channel_session_key  # noqa: F401
+    from kiro_crew.publish_governance import bind_egress_session  # noqa: F401
     from kiro_crew.publish_governance import publish_denied_reason  # noqa: F401
     from kiro_crew.publish_provider import DEFAULT_PROVIDER  # noqa: F401
     from kiro_crew.publish_provider import Capability  # noqa: F401
@@ -284,6 +285,7 @@ if TYPE_CHECKING:  # names this module re-exported from other modules
     from kiro_crew.publish_provider import KindSupport  # noqa: F401
     from kiro_crew.publish_provider import NotPublishedError  # noqa: F401
     from kiro_crew.publish_provider import PublishConflictError  # noqa: F401
+    from kiro_crew.publish_provider import PublishDeniedError  # noqa: F401
     from kiro_crew.publish_provider import PublishError  # noqa: F401
     from kiro_crew.publish_provider import PublishUnavailableError  # noqa: F401
     from kiro_crew.publish_provider import get_provider  # noqa: F401

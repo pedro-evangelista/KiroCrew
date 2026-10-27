@@ -443,7 +443,7 @@ describe('chatSlice steer frame placement', () => {
   })
 
   it('repairs the card even when it arrives BEFORE the steer response resolves', async () => {
-    // The other order. `submittedRaw` is a ref, so writing it triggers no render and the
+    // The other order. Recording submitted steer text does not trigger a render, so the
     // queue effect will not re-run — the repair has to happen in `onSuccess` too. A
     // deferred response reproduces the race deterministically.
     const raw = 'rotate AKIAIOSFODNN7EXAMPLE now'

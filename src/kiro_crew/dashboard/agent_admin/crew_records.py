@@ -478,8 +478,8 @@ async def _api_kirocrew_agents_create(request: web.Request) -> web.Response:
             return web.json_response({"error": model_reason, "code": "invalid_model"}, status=400)
         # Checked INSIDE the config lock, immediately before the binding is
         # added: a fork recording lineage after a pre-lock validation must not
-        # slip another crew's private copy into this new binding (GPT
-        # round-34, same shape as the locked rebind's in-mutate check).
+        # slip another crew's private copy into this new binding (same shape
+        # as the locked rebind's in-mutate check).
         try:
             owner = await asyncio.to_thread(_foreign_private_copy_owner, name, kiro_agent)
         except _UnverifiableLineage as exc:
