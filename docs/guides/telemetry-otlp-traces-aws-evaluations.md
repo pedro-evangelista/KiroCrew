@@ -200,6 +200,23 @@ final ID equals the AgentCore scenario ID; ordinary session IDs should pass
 through unchanged. The ACP converter's older `--session-map` lookup is only a
 compatibility fallback when those event identity fields are absent.
 
+For ordinary dashboard turns without a producer turn ID, the ACP tap snapshots
+the active hook's exact trace and span IDs. Ambiguous session ownership is not
+resolved by timestamps. Chat-launched workflows are linked through the exact
+run ID returned by `workflow_run` and the launching ACP turn's hook IDs. Failed
+or cancelled workflows also retain tool calls from unfinished ACP prompts;
+interrupted calls are marked partial and failed/cancelled, not successful.
+
+Before attempting network delivery, exports are synced to a durable
+`export-outbox` below `KIRO_OTEL_TRACE_DIR` (default
+`~/.kiro/otel-traces`). Pending envelopes keep their original trace/span IDs and
+are retried on subsequent converter passes, including passes with no new spans.
+Collector rejection or connection failure leaves the envelope queued. Keep this
+directory on persistent storage and monitor disk usage during prolonged outages.
+Delivery is at least once: a crash after acceptance but before queue cleanup can
+resend the same span IDs. A dry-run writes only to its configured output file
+and never drains queued network exports.
+
 ## External Collector contract for AWS traces
 
 Configure an external Collector to accept OTLP/HTTP traces at the endpoint

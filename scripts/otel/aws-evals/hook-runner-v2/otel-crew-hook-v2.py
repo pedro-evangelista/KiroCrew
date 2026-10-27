@@ -112,11 +112,10 @@ def span(
 
 
 def export(spans: list[dict]) -> None:
-    if not spans:
-        return
     by_session: dict[str, list[dict]] = {}
     for s in spans:
         by_session.setdefault(s.pop("_session", "unknown"), []).append(s)
+    envelopes = []
     for session, group in by_session.items():
         envelope = {
             "resourceSpans": [
@@ -141,17 +140,50 @@ def export(spans: list[dict]) -> None:
             with open(DRY_RUN_FILE, "ab") as stream:
                 stream.write(body + b"\n")
             continue
-        request = urllib.request.Request(
-            f"{ENDPOINT}/v1/traces",
-            data=body,
-            method="POST",
-            headers={"Content-Type": "application/json"},
-        )
+        envelopes.append(body)
+    if DRY_RUN_FILE:
+        return
+    import fcntl
+
+    outbox = TRACE_ROOT / "export-outbox"
+    outbox.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with (outbox / ".lock").open("a+b") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         try:
-            with urllib.request.urlopen(request, timeout=2):
-                pass
-        except (OSError, urllib.error.URLError, TimeoutError) as exc:
-            log_error(f"OTLP export failed: {exc}")
+            for body in envelopes:
+                fd, temporary = tempfile.mkstemp(prefix=".pending-", dir=outbox)
+                try:
+                    with os.fdopen(fd, "wb") as stream:
+                        stream.write(body)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    os.replace(temporary, outbox / f"{time.time_ns()}-{secrets.token_hex(8)}.json")
+                finally:
+                    if os.path.exists(temporary):
+                        os.unlink(temporary)
+            directory = os.open(outbox, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+                for pending in sorted(outbox.glob("*.json")):
+                    request = urllib.request.Request(
+                        f"{ENDPOINT}/v1/traces", data=pending.read_bytes(), method="POST",
+                        headers={"Content-Type": "application/json"},
+                    )
+                    try:
+                        with urllib.request.urlopen(request, timeout=2) as response:
+                            result = json.loads(response.read() or b"{}")
+                        if int(result.get("partialSuccess", {}).get("rejectedSpans", 0)):
+                            log_error(f"OTLP export rejected spans; retained {pending.name}: {result}")
+                            break
+                    except (OSError, urllib.error.URLError, TimeoutError, ValueError) as exc:
+                        log_error(f"OTLP export failed; retained {pending.name}: {exc}")
+                        break
+                    pending.unlink()
+                    os.fsync(directory)
+            finally:
+                os.close(directory)
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
 def log_error(message: str) -> None:

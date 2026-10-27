@@ -185,7 +185,7 @@ def mark_workflow_turns_used(run, turns, used):
             used.add(id(turn))
 
 
-def build_turns(rows):
+def build_turns(rows, include_incomplete=False):
     """One turn per completed session/prompt: its frames between request and response."""
     turns, open_ = [], {}
     for r in rows:
@@ -202,6 +202,8 @@ def build_turns(rows):
                 "parent_session_key": ids.get("parent_session_key") or ids.get("parentSessionKey"),
                 "session_id": ids.get("session_id"),
                 "turn_id": ids.get("turn_id"),
+                "hook_trace_id": ids.get("hook_trace_id"),
+                "hook_span_id": ids.get("hook_span_id"),
                 "start": int(r["ts_ns"]),
                 "frames": [],
                 "usage": {},
@@ -220,6 +222,7 @@ def build_turns(rows):
             turns.append(t)
         else:
             ids = r.get("ids", {})
+            matched = []
             for t in open_.values():
                 exact_turn = t.get("turn_id") and ids.get("turn_id") == t["turn_id"]
                 exact_workflow_agent = (
@@ -230,6 +233,7 @@ def build_turns(rows):
                 )
                 if exact_turn or exact_workflow_agent:
                     t["frames"].append(r)
+                    matched.append(t)
                     if r.get("method") == "_kiro.dev/metadata" and r.get(
                         "nums"
                     ):  # Kiro CLI reports credits and duration, not tokens
@@ -238,6 +242,31 @@ def build_turns(rows):
                         k["duration_ms"] = max(
                             k.get("duration_ms", 0), r["nums"].get("turnDurationMs", 0)
                         )
+            if matched:
+                continue
+
+            # Ordinary ACP clients often identify notifications only by process
+            # and session. Associate those frames only when exactly one
+            # metadata-free prompt for that session is in flight. Explicit
+            # correlation metadata remains authoritative, and ambiguous frames
+            # stay unassigned instead of being guessed by time or tool shape.
+            correlation_keys = ("turn_id", "workflow_run_id", "agent_id")
+            if any(ids.get(key) for key in correlation_keys):
+                continue
+            candidates = [
+                t for t in open_.values()
+                if t["pid"] == r["pid"]
+                and t["sid"] == ids.get("sessionId")
+                and not any(t.get(key) for key in correlation_keys)
+            ]
+            if len(candidates) == 1:
+                candidates[0]["frames"].append(r)
+    if include_incomplete:
+        for turn in open_.values():
+            turn["incomplete"] = True
+            turn["end"] = max([turn["start"], *[int(r["ts_ns"]) for r in turn["frames"]]])
+            turn["stop"] = "incomplete"
+            turns.append(turn)
     return turns
 
 
@@ -342,14 +371,15 @@ def tool_span(c, sid_key, trace_id, parent):
     out = (
         "".join(c["out"]) if c["out"] else c["result"]
     )  # the terminal output stream is the real output; rawOutput is the fallback
-    start, end = int(c["frames"][0]["ts_ns"]), int(c["frames"][-1]["ts_ns"])
+    start = int(c["frames"][0]["ts_ns"])
+    end = max(start, int(c.get("end_ns") or c["frames"][-1]["ts_ns"]))
     status = c.get("status", "unknown")
     exit_code = c.get("exit_code")
     if exit_code is not None:
         success = "true" if str(exit_code) == "0" else "false"
     elif status == "completed" and not c.get("error"):
         success = "true"
-    elif status == "failed" or c.get("error"):
+    elif status in {"failed", "cancelled"} or c.get("error"):
         success = "false"
     else:
         success = "unknown"
@@ -375,6 +405,8 @@ def tool_span(c, sid_key, trace_id, parent):
         attrs.append(attr("workflow.agent_id", c["agent_id"]))
     if c.get("workflow_attribution"):
         attrs.append(attr("crew.attribution", c["workflow_attribution"]))
+    if c.get("partial"):
+        attrs.append(attr("tool.partial", True, "boolValue"))
     if exit_code is not None:
         attrs.append(attr("tool.exit_code", exit_code))
     if c["input"]:
@@ -544,6 +576,10 @@ def turn_spans(
             c["workflow_attribution"] = t.get("workflow_attribution")
             c["session_key"] = t.get("session_key")
             c["parent_session_key"] = t.get("parent_session_key")
+            if t.get("incomplete") and c.get("status") not in {"completed", "failed"}:
+                c["status"] = "cancelled" if t.get("stop") == "cancelled" else "failed"
+                c["partial"] = True
+                c["end_ns"] = t["end"]
             out_spans.append(tool_span(c, sid_key, trace_id, root_id))
     return out_spans
 
@@ -612,8 +648,9 @@ def workflow_spans(run, turns, used, orphans, used_orphans, hook_turns):
             if t.get("workflow_run_id") == run_id
             and t.get("agent_id") == agent_key
             and (not expected_session or t.get("sid") == expected_session)
+            and (not t.get("incomplete") or outcome in {"cancelled", "failed"})
         ]
-        if not matches:
+        if not matches and expected_session:
             identity_matches = [
                 t
                 for t in turns
@@ -638,6 +675,9 @@ def workflow_spans(run, turns, used, orphans, used_orphans, hook_turns):
         picked[agent_key] = matches
         used.update(id(t) for t in matches)
         for turn in matches:
+            if turn.get("incomplete"):
+                turn["end"] = t1
+                turn["stop"] = outcome
             turn["workflow_run_id"] = run_id
             turn["agent_id"] = agent_key
             turn["workflow_attribution"] = "explicit_ids"
@@ -646,6 +686,46 @@ def workflow_spans(run, turns, used, orphans, used_orphans, hook_turns):
     related_turns = [h for h in hook_turns if h.get("workflow_run_id") == run_id]
     parent_turn = next((h for h in related_turns if not h.get("workflow")), None)
     completion = next((h for h in related_turns if h.get("workflow")), None)
+    launch_call_id = None
+    if parent_turn is None:
+        launches = []
+        for turn in turns:
+            for call in tool_calls(turn.get("frames", [])):
+                if call.get("name") != "workflow_run":
+                    continue
+                try:
+                    output = json.loads(call.get("result") or "null")
+                except (TypeError, ValueError):
+                    continue
+                if not isinstance(output, dict) or not isinstance(output.get("items"), list):
+                    continue
+                texts = []
+                for item in output["items"]:
+                    payload = item.get("Json") if isinstance(item, dict) else None
+                    blocks = payload.get("content") if isinstance(payload, dict) else None
+                    if isinstance(blocks, list):
+                        texts.extend(
+                            block["text"] for block in blocks
+                            if isinstance(block, dict) and block.get("type") == "text"
+                            and isinstance(block.get("text"), str)
+                        )
+                if not any(text.startswith(f"Started workflow run `{run_id}` ") for text in texts):
+                    continue
+                hook = match_v2(turn, sk, hook_turns)
+                if hook is None and resolve_session_key(turn) == sk:
+                    trace, root = turn.get("hook_trace_id"), turn.get("hook_span_id")
+                    if (isinstance(trace, str) and re.fullmatch(r"[0-9a-f]{32}", trace)
+                            and isinstance(root, str) and re.fullmatch(r"[0-9a-f]{16}", root)):
+                        hook = {"trace_id": trace, "span_id": root, "session": sk}
+                if hook is not None:
+                    launches.append((hook, call["id"]))
+        if len(launches) == 1:
+            parent_turn, launch_call_id = launches[0]
+        elif len(launches) > 1:
+            v2.append_jsonl("correlation-errors.jsonl", {
+                "reason": "ambiguous_workflow_launch", "workflow_run_id": run_id,
+                "tool_call_ids": [call_id for _, call_id in launches],
+            })
     # A background workflow can run between the initiating turn and its later
     # completion turn. When there is no active parent, reuse the completion
     # turn's trace ID so the workflow root and phases appear in the chat trace.
@@ -664,6 +744,8 @@ def workflow_spans(run, turns, used, orphans, used_orphans, hook_turns):
         attr("crew.source", "acp_tap"),
     ] + wf_io(run, bool(parent_turn), outcome)
     run_attrs += producer_session_attributes(run)
+    if launch_call_id:
+        run_attrs.append(attr("workflow.launch_tool_call_id", launch_call_id))
     script_hash = started.get("data", {}).get("script_hash")
     if script_hash:
         run_attrs.append(attr("workflow.script.sha256", script_hash))
@@ -877,14 +959,19 @@ def v2_turns():
 
 
 def match_v2(t, sid_key, hook_turns):
-    """Match an ACP turn to its hook turn by the shared producer turn ID."""
+    """Match an ACP turn to its hook turn by exact producer identity."""
     turn_id = t.get("turn_id")
-    if not turn_id:
-        return None
-    for h in hook_turns:
-        if h.get("session") == sid_key and h.get("turn_id") == turn_id:
-            return h
-    return None
+    if turn_id:
+        matches = [h for h in hook_turns if h.get("session") == sid_key and h.get("turn_id") == turn_id]
+    else:
+        trace_id, span_id = t.get("hook_trace_id"), t.get("hook_span_id")
+        if not (isinstance(trace_id, str) and isinstance(span_id, str)
+                and re.fullmatch(r"[0-9a-f]{32}", trace_id)
+                and re.fullmatch(r"[0-9a-f]{16}", span_id)):
+            return None
+        matches = [h for h in hook_turns if h.get("session") == sid_key
+                   and h.get("trace_id") == trace_id and h.get("span_id") == span_id]
+    return matches[0] if len(matches) == 1 else None
 
 
 def main(argv=None):
@@ -917,7 +1004,7 @@ def run():
     known_run_ids = set(state["runs"])
     hook_turns = v2_turns()
     rows = drop_replay(load_frames())
-    turns = build_turns(rows)
+    turns = build_turns(rows, include_incomplete=True)
     attach_prompts(turns)
     sm = {}
     try:
@@ -986,6 +1073,8 @@ def run():
     # 2. ordinary chat turns
     for t in turns:
         if id(t) in used:
+            continue
+        if t.get("incomplete"):
             continue
         if t.get("workflow_run_id") and not args.force and t["workflow_run_id"] in known_run_ids:
             continue

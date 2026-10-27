@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import shutil
@@ -921,6 +922,105 @@ def test_hook_export_failure_is_fail_open(monkeypatch, tmp_path):
     hook.export([hook.span("a" * 32, "b" * 16, "test", 1, 2, [])])
 
 
+def test_export_outbox_retries_original_span_ids_on_empty_pass(monkeypatch, tmp_path):
+    hook = load_hook(monkeypatch, tmp_path)
+    monkeypatch.setattr(hook, "DRY_RUN_FILE", None)
+    with monkeypatch.context() as offline:
+        offline.setattr(hook.urllib.request, "urlopen",
+                        lambda *_a, **_kw: (_ for _ in ()).throw(OSError("offline")))
+        hook.export([hook.span("a" * 32, "b" * 16, "test", 1, 2, [])])
+    pending = list((hook.TRACE_ROOT / "export-outbox").glob("*.json"))
+    assert len(pending) == 1
+    original = pending[0].read_bytes()
+    received = []
+
+    def send(request, **_kwargs):
+        received.append(request.data)
+        return io.BytesIO(b"{}")
+
+    monkeypatch.setattr(hook.urllib.request, "urlopen", send)
+    hook.export([])
+    hook.export([])
+    assert received == [original]
+    assert not list((hook.TRACE_ROOT / "export-outbox").glob("*.json"))
+    stored = json.loads(original)["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    assert stored["traceId"] == "a" * 32
+    assert stored["spanId"] == "b" * 16
+
+
+def test_export_outbox_retains_partial_rejections_and_dry_run_does_not_drain(monkeypatch, tmp_path):
+    hook = load_hook(monkeypatch, tmp_path)
+    monkeypatch.setattr(hook, "DRY_RUN_FILE", None)
+    monkeypatch.setattr(hook.urllib.request, "urlopen",
+                        lambda *_a, **_kw: io.BytesIO(b'{"partialSuccess":{"rejectedSpans":"1"}}'))
+    hook.export([hook.span("a" * 32, "b" * 16, "test", 1, 2, [])])
+    assert len(list((hook.TRACE_ROOT / "export-outbox").glob("*.json"))) == 1
+    monkeypatch.setattr(hook, "DRY_RUN_FILE", str(tmp_path / "dry.jsonl"))
+
+    def unexpected_send(*_args, **_kwargs):
+        pytest.fail("dry-run must not drain live exports")
+
+    monkeypatch.setattr(hook.urllib.request, "urlopen", unexpected_send)
+    hook.export([])
+    assert len(list((hook.TRACE_ROOT / "export-outbox").glob("*.json"))) == 1
+
+
+def test_cancelled_workflow_keeps_unfinished_prompt_tool(monkeypatch, tmp_path):
+    converter = load_converter(monkeypatch, tmp_path)
+    rows = [
+        {"pid": 1, "id": 2, "method": "session/prompt", "dir": "client_to_agent",
+         "ids": {"sessionId": "session", "workflow_run_id": "wf_test", "agent_id": "a0",
+                 "turn_id": "wf_test:a0"}, "ts_ns": "1793106000000000000"},
+        {"pid": 1, "kind": "notification", "dir": "agent_to_client",
+         "ids": {"workflow_run_id": "wf_test", "agent_id": "a0", "toolCallId": "call",
+                 "name": "shell", "status": "in_progress"},
+         "update": "tool_call", "content": {"input": '{"command":"sleep 20"}'},
+         "ts_ns": "1793106001000000000"},
+    ]
+    assert converter.build_turns(rows) == []
+    turns = converter.build_turns(rows, include_incomplete=True)
+    run = {"run_id": "wf_test", "name": "test", "session_key": "dashboard:test", "events": [
+        {"type": "run_started", "ts": "2026-10-27T13:00:00+00:00", "data": {}},
+        {"type": "agent_started", "ts": "2026-10-27T13:00:00+00:00", "data": {"agent_id": "a0"}},
+        {"type": "agent_session_bound", "ts": "2026-10-27T13:00:00+00:00",
+         "data": {"agent_id": "a0", "acp_session_id": "session"}},
+        {"type": "run_cancelled", "ts": "2026-10-27T13:00:10+00:00", "data": {}},
+    ]}
+    spans = converter.workflow_spans(run, turns, set(), [], set(), [])
+    tool = next(s for s in spans if s["name"] == "execute_tool shell")
+    agent = next(s for s in spans if s["name"].startswith("invoke_agent "))
+    assert tool["traceId"] == agent["traceId"]
+    assert tool["parentSpanId"] == agent["spanId"]
+    assert attribute(tool, "tool.partial") is True
+    assert attribute(tool, "tool.status") == "cancelled"
+    assert attribute(tool, "tool.result.available") is False
+    assert tool["status"]["code"] == 2
+    assert tool["endTimeUnixNano"] == "1793106010000000000"
+
+
+def test_workflow_launch_joins_exact_returned_run_id_and_hook_ids(monkeypatch, tmp_path):
+    converter = load_converter(monkeypatch, tmp_path)
+    run = {"run_id": "wf_test", "name": "test", "session_key": "dashboard:test", "events": [
+        {"type": "run_started", "ts": "2026-10-27T13:00:00+00:00", "data": {}},
+        {"type": "run_finished", "ts": "2026-10-27T13:00:10+00:00", "data": {}},
+    ]}
+    output = json.dumps({"items": [{"Json": {"content": [
+        {"type": "text", "text": "Started workflow run `wf_test` (name: test)."}
+    ]}}]})
+    turn = {"session_key": "dashboard:test", "hook_trace_id": "a" * 32,
+            "hook_span_id": "b" * 16, "frames": [
+        {"ids": {"toolCallId": "launch", "name": "workflow_run", "status": "completed"},
+         "update": "tool_call", "content": {"output": output}, "ts_ns": "1"},
+    ]}
+    spans = converter.workflow_spans(run, [turn], set(), [], set(), [])
+    assert spans[0]["traceId"] == "a" * 32
+    assert spans[0]["parentSpanId"] == "b" * 16
+    assert attribute(spans[0], "workflow.launch_tool_call_id") == "launch"
+    turn["frames"][0]["ids"]["name"] = "workflow_result"
+    spans = converter.workflow_spans(run, [turn], set(), [], set(), [])
+    assert "parentSpanId" not in spans[0]
+
+
 def test_installer_is_import_safe_and_requires_explicit_action(tmp_path):
     hooks_path = tmp_path / "hooks.json"
     original = '{"hooks":[{"id":"custom","enabled":true}]}'
@@ -1143,6 +1243,121 @@ def run_packaged_tap(
         else []
     )
     return frames, prompt_rows, result
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the packaged shell shim is POSIX-only")
+def test_tap_carries_active_hook_turn_identity_into_unannotated_acp_frames(tmp_path):
+    crew_home = tmp_path / "crew"
+    crew_home.mkdir()
+    (crew_home / "session_map.json").write_text(
+        json.dumps({"dashboard:chat-one": {"sid": "acp-1"}}), encoding="utf-8"
+    )
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "state.json").write_text(
+        json.dumps({
+            "sessions": {
+                "dashboard:chat-one": {
+                    "turn": {"turn_id": "turn-one", "session_key": "dashboard:chat-one"}
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    frames, _, _ = run_packaged_tap(
+        tmp_path,
+        env_overrides={
+            "KIROCREW_HOME": str(crew_home),
+            "KIRO_OTEL_STATE_DIR": str(state_dir),
+        },
+    )
+
+    prompt = next(frame for frame in frames if frame.get("method") == "session/prompt")
+    tool = next(frame for frame in frames if frame.get("update") == "tool_call")
+    assert prompt["ids"].get("turn_id") == "turn-one"
+    assert prompt["ids"].get("session_key") == "dashboard:chat-one"
+    assert tool["ids"].get("turn_id") == "turn-one"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the packaged shell shim is POSIX-only")
+def test_tap_carries_active_hook_span_identity_without_turn_id(tmp_path):
+    crew_home = tmp_path / "crew"
+    crew_home.mkdir()
+    (crew_home / "session_map.json").write_text(
+        json.dumps({"dashboard:chat-one": {"sid": "acp-1"}}), encoding="utf-8"
+    )
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "state.json").write_text(
+        json.dumps({
+            "sessions": {
+                "dashboard:chat-one": {
+                    "turn": {
+                        "trace_id": "a" * 32,
+                        "span_id": "b" * 16,
+                        "session_key": "dashboard:chat-one",
+                    }
+                }
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    frames, _, _ = run_packaged_tap(
+        tmp_path,
+        env_overrides={
+            "KIROCREW_HOME": str(crew_home),
+            "KIRO_OTEL_STATE_DIR": str(state_dir),
+        },
+    )
+
+    prompt = next(frame for frame in frames if frame.get("method") == "session/prompt")
+    tool = next(frame for frame in frames if frame.get("update") == "tool_call")
+    assert prompt["ids"].get("hook_trace_id") == "a" * 32
+    assert prompt["ids"].get("hook_span_id") == "b" * 16
+    assert tool["ids"].get("hook_span_id") == "b" * 16
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the packaged shell shim is POSIX-only")
+def test_tap_does_not_join_ambiguous_acp_session_owners(tmp_path):
+    crew_home = tmp_path / "crew"
+    crew_home.mkdir()
+    (crew_home / "session_map.json").write_text(
+        json.dumps({
+            "dashboard:chat-one": {"sid": "acp-1"},
+            "dashboard:chat-two": {"sid": "acp-1"},
+        }),
+        encoding="utf-8",
+    )
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "state.json").write_text(
+        json.dumps({
+            "sessions": {
+                "dashboard:chat-one": {
+                    "turn": {"turn_id": "turn-one", "session_key": "dashboard:chat-one"}
+                },
+                "dashboard:chat-two": {
+                    "turn": {"turn_id": "turn-two", "session_key": "dashboard:chat-two"}
+                },
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    frames, _, _ = run_packaged_tap(
+        tmp_path,
+        env_overrides={
+            "KIROCREW_HOME": str(crew_home),
+            "KIRO_OTEL_STATE_DIR": str(state_dir),
+        },
+    )
+
+    prompt = next(frame for frame in frames if frame.get("method") == "session/prompt")
+    tool = next(frame for frame in frames if frame.get("update") == "tool_call")
+    assert "turn_id" not in prompt["ids"]
+    assert "turn_id" not in tool["ids"]
 
 
 @pytest.mark.skipif(os.name != "posix", reason="the packaged shell shim is POSIX-only")

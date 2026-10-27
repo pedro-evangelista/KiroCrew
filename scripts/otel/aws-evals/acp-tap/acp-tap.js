@@ -72,9 +72,47 @@ function contentOf(upd) {
 }
 const SKIP = new Set(['rawInput', 'rawOutput', 'content', 'prompt', 'arguments', 'structuredContent', 'result', 'text']);
 const ID_KEYS = new Set(['exit_code', 'signal', 'terminal_id', 'messageId', 'name', 'toolCallId', 'sessionId', 'session_id', 'session_key', 'sessionKey', 'parentSessionKey', 'tool_call_id', 'requestId', 'stopReason', 'status', 'kind',
-  'workflow_run_id', 'agent_id', 'parent_session_key', 'evaluation_session_id', 'turn_id',
+  'workflow_run_id', 'agent_id', 'parent_session_key', 'evaluation_session_id', 'turn_id', 'hook_trace_id', 'hook_span_id',
   'sessionUpdate', 'protocolVersion', 'mode', 'modeId', 'optionId']);
 const NUM_HINT = /token|count|duration|cost/i;
+const CREW_HOME = process.env.KIROCREW_HOME || os.homedir();
+const SESSION_MAP = path.join(CREW_HOME, 'session_map.json');
+const TRACE_ROOT = process.env.KIRO_OTEL_TRACE_DIR || path.join(os.homedir(), '.kiro', 'otel-traces');
+const HOOK_STATE = path.join(process.env.KIRO_OTEL_STATE_DIR || path.join(TRACE_ROOT, 'state-v2'), 'state.json');
+const MAX_IDENTITY_FILE = 4 * 1024 * 1024;
+
+function readIdentityFile(file) {
+  try {
+    const stat = fs.statSync(file);
+    if (!stat.isFile() || stat.size > MAX_IDENTITY_FILE) return null;
+    const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  } catch (e) { return null; }
+}
+
+function activeHookIdentity(acpSessionId) {
+  const mapping = readIdentityFile(SESSION_MAP);
+  if (!mapping) return null;
+  let sessionKey = null;
+  for (const [key, entry] of Object.entries(mapping)) {
+    if (!entry || entry.sid !== acpSessionId) continue;
+    if (sessionKey) return null; // Two owners of one ACP session are ambiguous.
+    sessionKey = key;
+  }
+  if (!sessionKey || !sessionKey.startsWith('dashboard:')) return null;
+  const sessions = readIdentityFile(HOOK_STATE)?.sessions;
+  const turn = sessions && sessions[sessionKey] && sessions[sessionKey].turn;
+  if (!turn || turn.session_key !== sessionKey) return null;
+  const context = { session_key: sessionKey };
+  if (typeof turn.turn_id === 'string' && turn.turn_id && turn.turn_id.length <= 80) {
+    context.turn_id = turn.turn_id;
+  }
+  if (/^[0-9a-f]{32}$/.test(turn.trace_id || '') && /^[0-9a-f]{16}$/.test(turn.span_id || '')) {
+    context.hook_trace_id = turn.trace_id;
+    context.hook_span_id = turn.span_id;
+  }
+  return context.turn_id || context.hook_trace_id ? context : null;
+}
 
 let recording = !DISABLED;
 let written = 0;
@@ -170,10 +208,20 @@ function record(dir, line) {
     const sessionId = ids.sessionId;
     const rpcKey = hasId ? `${process.pid}:${String(msg.id)}` : null;
     if (dir === 'client_to_agent' && msg.method === 'session/prompt' && sessionId) {
-      const context = Object.fromEntries(['turn_id', 'workflow_run_id', 'agent_id', 'session_key', 'sessionKey', 'session_id', 'parent_session_key', 'parentSessionKey']
+      let identitySource = null;
+      if (!ids.turn_id && !ids.session_key && !ids.workflow_run_id && !ids.agent_id && !ids.parent_session_key
+          && !ids.hook_trace_id && !ids.hook_span_id) {
+        const hookIdentity = activeHookIdentity(sessionId);
+        if (hookIdentity) {
+          Object.assign(ids, hookIdentity);
+          identitySource = 'active_hook_state';
+        }
+      }
+      const context = Object.fromEntries(['turn_id', 'hook_trace_id', 'hook_span_id', 'workflow_run_id', 'agent_id', 'session_key', 'sessionKey', 'session_id', 'parent_session_key', 'parentSessionKey']
         .filter((key) => ids[key]).map((key) => [key, ids[key]]));
       setBoundedContext(activePromptContexts, `${process.pid}:${sessionId}`, { requestId: String(msg.id), context });
       setBoundedContext(promptContextsByRpcId, rpcKey, { sessionId, context });
+      if (identitySource) ids.identity_source = identitySource;
     } else {
       const promptContext = dir === 'agent_to_client' && kind === 'response'
         ? promptContextsByRpcId.get(rpcKey)
