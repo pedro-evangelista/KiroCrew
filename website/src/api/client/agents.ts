@@ -114,6 +114,12 @@ export interface MemberRosterRow {
    *  it created Mate). Absent or false = never owed; the Crewmates page then
    *  treats Mate as already seen. */
   welcome_owed?: boolean
+  /** The crewmate holds at least one goal (its goal record, `GET
+   *  /api/members/{slug}/goals`). Absent on an older gateway. */
+  has_goal?: boolean
+  /** The crewmate's heartbeat is on: it wakes on its own schedule to move its
+   *  goals forward, so it is on watch. Absent on an older gateway. */
+  heartbeat_on?: boolean
   /** Baseline projections (roster/activity/wake/driving) at a known seq, fed
    *  to the per-member projection store so the page renders from pushed
    *  frames. Absent on an older gateway that predates the event log. */

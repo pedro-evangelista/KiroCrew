@@ -23,6 +23,7 @@ from aiohttp import web
 
 from kiro_crew import members as members_mod
 from kiro_crew.config.loader import load_config_with_content_stamp
+from kiro_crew.dashboard import members_roster_goals
 from kiro_crew.dashboard.handlers._shared import require_owner_dashboard_request
 from kiro_crew.dashboard.handlers.members_access import (
     _audit_owner_read,
@@ -571,6 +572,12 @@ async def api_members(request: web.Request) -> web.Response:
     observed_rosters = await asyncio.to_thread(_observe_rosters)
     tails = await asyncio.to_thread(_read_transcript_tails)
     await asyncio.to_thread(_stamp_welcome_claimed, rows)
+    # Who has a goal and whose heartbeat is on, off each member's goal record:
+    # the row's goal marker and its on-watch cue (with the slot's automation).
+    # One thread hop for the roster, like the bindings and the transcript tails.
+    goal_facts = await asyncio.to_thread(members_roster_goals.goal_facts_for_rows, rows)
+    for row in rows:
+        row.update(goal_facts.get(row["name"], {}))
     # Slot keys whose speech-only read is trustworthy enough to correct the
     # member log with: a non-empty quote, or an empty one from a walk that
     # reached the start of the log -- and, either way, only for a slot whose

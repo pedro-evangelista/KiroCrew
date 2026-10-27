@@ -13,7 +13,7 @@ import {
 
 const EMPTY_QUERY: RosterQuery = { search: '', starredOnly: false, source: 'all', status: new Set(), sort: 'recent' }
 
-const IDLE: MemberSignals = { running: false, needsYou: false, unread: false, patrolling: false }
+const IDLE: MemberSignals = { running: false, needsYou: false, unread: false, patrolling: false, goal: false }
 const SIGNALS: Record<string, MemberSignals> = {
   conductor: { ...IDLE, running: true, patrolling: true },
   kirocrew: { ...IDLE, needsYou: true },

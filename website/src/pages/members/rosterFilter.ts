@@ -43,8 +43,11 @@ export interface MemberSignals {
   needsYou: boolean
   /** The DM thread has a message the user has not seen. */
   unread: boolean
-  /** An auto-nudge loop is armed on the member's slot and active. */
+  /** On watch: the member will act again without being asked -- an active
+   *  monitor loop on its slot, or its heartbeat on. */
   patrolling: boolean
+  /** The member holds at least one goal. */
+  goal: boolean
 }
 
 export type MemberStatusFilter = 'working' | 'needs_you' | 'unread' | 'patrolling'

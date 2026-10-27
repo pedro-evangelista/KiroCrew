@@ -1639,9 +1639,10 @@ change, and edits the order pin (follow-up #20512 for the Schedules guard state)
 |---|---|
 | `MembersPage.tsx` | the composition; the page's selection state (open mate, crew being edited, open Profile card); the New mate card and its post-create follow-up; the guide facts and hand-offs; the exit guards (the native confirms the lint allowlist permits); the face-flight overlay |
 | `membersPageModel.ts` | pure rules: `resolveMateLanding`, `resolveDefaultMember`, `memberMemoryDisplay`, `panelSitsBeside`, `panelChrome`, the withheld view sets, `createDraftFromHref`, the `?member=` param and the roster width bounds |
-| `useMembersPageRoster.ts` | the roster read and its projection merge; per-row live readings (unread, patrol, loop, needs-you); applying the filters to the held order (`sortedMembers`) and the filter menu's tallies, which need those readings |
+| `useMembersPageRoster.ts` | the roster read and its projection merge; per-row live readings (unread, patrol, on watch = monitor OR heartbeat, needs-you, goal); applying the filters to the held order (`sortedMembers`) and the filter menu's tallies, which need those readings |
 | `MembersPageRoster.tsx` | the roster column (header and add menu, search, filter menu, chip, team groups, resize grip) and the roster view state: presence, the open mate's projected record and DM identity (`activeRoster`, `activeView`, `crewmateIdentity`), the persisted filters and sort with the question they ask (`rosterFilterQuery`) and the population it lists, starring, the held order |
-| `MembersPageRosterRows.tsx` | `MemberRow` (one roster row, reading its own `roster` projection) and `CrewmateEmptyHero` (the empty roster's call to action) |
+| `MembersPageRosterRows.tsx` | `MemberRow` (one roster row, reading its own `roster` projection, drawn through `CrewmateRowBody` plus the star) and `CrewmateEmptyHero` (the empty roster's call to action) |
+| `CrewmateRowBody.tsx` | the one crewmate row the full roster and the switcher's options share: the face with its presence dot and on-watch ring, the name with the goal mark at the row's top-right corner, the status line (`Stopped` chip, preview; an sr-only "On watch"), and the right-edge needs-you and unread marks, all read off one `MemberSignals` |
 | `useMembersPageCrewEditor.ts` | the in-place `CrewEditorDialog`: its registry reads, the admitted-roster latch, the unsaved and in-flight stakes |
 | `useMembersPageTeams.ts` | the team read, collapsed groups, the team dialog, and the team view (open, close, grouping) |
 | `useMembersPageLayout.ts` | column placement: roster width, pin and fold; the phone top bar; the side panel docked or overlaid |
@@ -1763,29 +1764,59 @@ either read on an idle page, and the WebSocket may never have dropped.
 Because a bare `/members` reopens a mate, the folded roster is the desktop
 norm, so the switcher also carries the live per-crewmate signals the roster column
 used to. The page hands it the same `signalsOf` resolver its roster status filters
-read (`MemberSignals`: running / needsYou / unread / patrolling), so a cue here can
-never disagree with the filter that counts it. Each popover row shows the roster
-row's own cues — the `ok` presence dot on the face while working (named by the
-row's "Working" line), the accent unread dot on the right edge — plus a `warn`
-needs-you dot for a turn parked on an approval or a question; the two right-edge
-dots are named images, so the state is in the option's accessible name, and both
-labels reuse existing catalog keys (`filter_status_needs_you`, `unread_message`).
-Each right-edge dot also carries its state as a small muted word beside it
-(`team_needs_you` "Needs you", `switcher_unread` "Unread"): colour alone is not a
-state every reader can tell apart. The word is `aria-hidden`, because the named
-dot already puts the fuller sentence in the option's name and a spoken word
-would say it twice.
+read (`MemberSignals`: running / needsYou / unread / patrolling / goal) and the
+same `automationOf`, so a cue here can never disagree with the filter that counts
+it. Each popover row IS the roster row (#24687): both render `CrewmateRowBody`
+(`website/src/pages/members/CrewmateRowBody.tsx`), so what a state looks like is
+decided once. Before that the two rows were hand-written twice and had drifted
+(the switcher's unread dot was accent while the roster's was `ok`, its second line
+was "Working" / the agent template while the roster's was the preview, and only
+the roster drew the on-watch mark). The shared row: the `CrewMonitoredAvatar`
+face with the `ok` presence dot on its corner while working (no "Working" word:
+presence rides the dot) and the on-watch ring; the name with the **goal mark** at
+the row's top-right corner, a named `Goal` glyph (`row_goal` "Has a goal") drawn
+while the crewmate holds a goal (`has_goal` on the roster row) and nothing
+otherwise -- a goal is a working crewmate's ordinary state, so a word for it on
+every row would be noise; the status line, a `Stopped` chip then the preview; and
+the right-edge marks, a `warn` needs-you dot plus its `aria-hidden` word
+(`team_needs_you`) for a turn parked on an approval or a question, leading the
+`ok` unread dot (`unread_message`). The dots are named images, so the state is in
+the option's accessible name. **On watch** is the ring alone, visibly: the
+`loop_on` word is an sr-only span in the status line so the state is still spoken.
+The switcher's option draws no check mark: the open crewmate is already the row
+with `aria-selected` and the accent-subtle fill, and it is **pinned first** in the
+list (the rest keep the roster's order), so its place says which one is open. The
+host owns the chrome around the shared row: the roster's star and team indent, the
+switcher's `role=option`. Test ids are the shared row's with the host's prefix
+(`member-*`, `crewmate-switcher-row-*`).
+
+On watch has two sources and one reading (`isLoopOn`, in useMembersPageRoster.ts):
+an active monitor on the crewmate's own slot (`isAutomationActive` over the live
+automation frames, the legacy registry as the cold-start fallback) OR its
+heartbeat on (`heartbeat_on` on the roster row). The row's ring
+(`CrewMonitoredAvatar`'s `watch` prop, ORed with the record), the header pill's
+"On watch" and the **Scheduled check-ins** status filter (whose glyph is `Radar`,
+not `Goal`, which now means "has a goal") all read that one predicate.
+
+Both facts ride `GET /api/members`: `has_goal` and `heartbeat_on`, read off each
+member's own goal record (`member_goals.read_goals`) in one thread hop for the
+roster (`dashboard/members_roster_goals.goal_facts_for_rows`); an unreadable record
+reads as neither, so the row still renders and the Goals tab is where that fault
+is reported. A goal record changes rarely and nothing else announced those writes
+to the dashboard, so `members_roster_goals.start_roster_refresh` (started beside
+`crewmate_feed.start`) registers one `member_goals.add_change_listener` that pushes
+an `agents` refresh frame on the serving loop after every write -- the frame the
+roster query already re-reads on, its key sitting under `kirocrew-agents`.
 The closed chip shows a small `warn` needs-you dot over the face stack, and adds
 that label to its accessible name, only while a mate OTHER than the open one
 needs you: the open mate's parked turn is already on screen in its thread.
 The dot is absolutely placed, so the chip's width is the same with and without it.
 Working and unread elsewhere never light the chip. With no resolver passed, a row
-shows only its own `running` flag and the chip stays quiet. The full roster's rows
-(`MemberRow`, shown while pinned or with no thread open) carry the same needs-you
-cue on their right edge, leading the unread dot — the same `warn` named dot plus
-the same `aria-hidden` word, read through the same `signalsOf` resolver
-(`isNeedsYou`) — so the full roster, the folded switcher and the status filter
-never disagree about who is parked on a question.
+shows only its own `running`, `heartbeat_on` and `has_goal` flags and the chip
+stays quiet. The full roster's rows (`MemberRow`, shown while pinned or with no
+thread open) are the same `CrewmateRowBody` read through the same `signalsOf`
+resolver, so the full roster, the folded switcher and the status filter never
+disagree about who is parked on a question, on watch, or holding a goal.
 
 Unread is also the one signal drawn OUTSIDE the closed chip (#19045). Under it,
 in the header's floating band, hangs one small Glass pill per mate with an
@@ -2052,7 +2083,7 @@ description (two lines with a pushed full-text page); when the registry read fai
 the About section shows the shared actionable `ErrorNotice` above any retained
 description, and only omits the no-description claim when no cached description
 exists. Profile carries no monitor readout: what the mate watches is the
-Schedules tab's business (below). Every avatar and Profile surface shares the normalized record and strict `isAutomationActive` visual predicate through `CrewMonitoredAvatar`; that predicate extends `isAutomationRunning`, the broader lifecycle truth that keeps unsupported active records inside chat-sidebar close safety and its running filters. The Members page uses the strict predicate for its roster mark, header label, face flight, and **Patrolling** filter: a non-actionable record is lifecycle-busy but cannot truthfully make a visual on-watch claim. Live Redux frames remain the first source for roster and header visuals, while the card's existing `session-automation` slot query supplies retained stopped state and full owner-gated details. A failed owner-gated read deliberately hides the card's local avatar mark and its Schedules patrol row even when Redux still has a reduced live record; the roster and header keep their live mark, but the card never turns a failed authorization or refresh into a claim. A failed roster refresh likewise discards its last-good legacy fallback, because stale active state cannot support a current visual claim. Missing cold reads cannot invent an active mark.
+Schedules tab's business (below). Every avatar and Profile surface shares the normalized record and strict `isAutomationActive` visual predicate through `CrewMonitoredAvatar`; that predicate extends `isAutomationRunning`, the broader lifecycle truth that keeps unsupported active records inside chat-sidebar close safety and its running filters. The Members page uses the strict predicate for its roster mark, header label, face flight, and **Scheduled check-ins** filter: a non-actionable record is lifecycle-busy but cannot truthfully make a visual on-watch claim. The roster row, the header pill and that filter OR the predicate with the crewmate's heartbeat (`heartbeat_on`, `isLoopOn`), the other way a crewmate acts on its own; the Schedules patrol row and the face flight read the monitor record alone. Live Redux frames remain the first source for roster and header visuals, while the card's existing `session-automation` slot query supplies retained stopped state and full owner-gated details. A failed owner-gated read deliberately hides the card's local avatar mark and its Schedules patrol row even when Redux still has a reduced live record; the roster and header keep their live mark, but the card never turns a failed authorization or refresh into a claim. A failed roster refresh likewise discards its last-good legacy fallback, because stale active state cannot support a current visual claim. Missing cold reads cannot invent an active mark.
 Memory and
 Workspace sit side by side, but Memory is a flat readout — a solid `border-border`
 hairline, transparent background, no hover and no pointer; never dashed, which is
