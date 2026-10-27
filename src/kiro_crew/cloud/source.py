@@ -26,6 +26,7 @@ from typing import Any, Callable, NamedTuple, Optional
 from kiro_crew import github_runner, platform_compat
 from kiro_crew.cloud import aws
 from kiro_crew.config.loader import config_dir
+from kiro_crew.platform.update_governance import git_command_env, repo_exec_driver_reason
 from kiro_crew.sel import sel
 from kiro_crew.subprocess_utf8 import UTF8_TEXT
 
@@ -613,7 +614,11 @@ def _use_git_archive(root: Path, *, digest: Optional["hashlib._Hash"] = None) ->
         # which is the same substitutable name a reopen would be. stderr alone is
         # piped, because stdout is spoken for.
         rc = subprocess.run(  # noqa: S603 — fixed argv, no shell
-            ["git", "-C", str(root), "archive", "--format=tar.gz", "HEAD"],
+            # Plain `tar`, compressed by _refilter_archive in Python: git runs the
+            # `tar.<format>.command` compressor the repository's config names, and
+            # `tar.tar.gz.command` is a repo-chosen program no env pin reaches.
+            ["git", "-C", str(root), "archive", "--format=tar", "HEAD"],
+            env=git_command_env(),
             stdout=out,
             stderr=subprocess.PIPE,
             timeout=120,
@@ -656,7 +661,8 @@ def _refilter_archive(archive: Any, *, digest: Optional["hashlib._Hash"] = None)
         archive.seek(0)
 
         def _fill(dst: tarfile.TarFile) -> None:
-            with tarfile.open(fileobj=archive, mode="r:gz") as src:
+            # "r:*": git now hands over a plain tar (see _use_git_archive).
+            with tarfile.open(fileobj=archive, mode="r:*") as src:
                 for member in src:
                     if _exclude_filter(member) is None:
                         logger.info("excluding %s from source tarball", member.name)
@@ -710,6 +716,8 @@ def _git_tracked_files(root: Path) -> Optional[list]:
     try:
         rc = subprocess.run(  # noqa: S603 — fixed argv, no shell
             ["git", "-C", str(root), "ls-files", "-z"],
+            # Pins `core.fsmonitor`, which `ls-files` runs (measured on git 2.47).
+            env=git_command_env(),
             capture_output=True,
             timeout=60,
         )
@@ -735,6 +743,7 @@ def _tracked_tree_is_dirty(root: Path) -> bool:
     try:
         rc = subprocess.run(  # noqa: S603 — fixed argv, no shell
             ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"],
+            env=git_command_env(),
             capture_output=True,
             timeout=60,
             **UTF8_TEXT,
@@ -853,6 +862,17 @@ def build_source_tarball(root: Optional[Path] = None) -> StagedSource:
     # fallback's checksum, which would then describe bytes the named file does not
     # contain -- and S3 would refuse a perfectly good tarball on a
     # --checksum-sha256 mismatch.
+    # `git status` and `git archive` run a repo-named `filter.<name>.clean` /
+    # `.smudge` from the checkout's own config, which an agent can write and no
+    # environment pin reaches. Such a tree skips both and is packaged by the
+    # tracked-file tar path, whose only git call (`ls-files`) runs no driver.
+    refused = repo_exec_driver_reason(str(root), git="git")  # the git spawned below
+    if refused:
+        logger.warning("%s; packaging the tracked files without git archive", refused)
+        guarded_digest = hashlib.sha256()
+        packaged = _tar_fallback(root, digest=guarded_digest)
+        return _staged(packaged, guarded_digest)
+
     if _tracked_tree_is_dirty(root):
         logger.info("working tree has uncommitted tracked changes; packaging the working tree")
         dirty_digest = hashlib.sha256()

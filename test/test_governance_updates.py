@@ -734,7 +734,8 @@ class TestWorktreeRedirectRefusal:
         """Cannot prove where a write would land, so do not write."""
         monkeypatch.setattr(
             "kiro_crew.platform.update_governance._git_probe",
-            lambda proj, *a: "" if a[:1] == ("config",) else None,
+            # `ls-files` answers "no nested repos" so the work-tree probe is reached.
+            lambda proj, *a, **_k: "" if a[:1] in (("config",), ("ls-files",)) else None,
         )
         assert update_governance.repo_exec_config_reason("/proj") != ""
 

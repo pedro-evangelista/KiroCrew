@@ -356,6 +356,10 @@ from kiro_crew.platform.context import (  # noqa: F401
     redact_log_via_context,
     redact_owner_view_via_context,
 )
+from kiro_crew.platform.update_governance import (  # noqa: F401 - owner: editor
+    git_command_env,
+    repo_exec_driver_reason,
+)
 from kiro_crew.sandbox import (  # noqa: F401
     cgroup_scope_argv,
     popen_limited,

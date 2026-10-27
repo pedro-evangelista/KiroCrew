@@ -75,6 +75,7 @@ from pathlib import Path
 
 from kiro_crew.atomic_write import atomic_write
 from kiro_crew.git_config_hooks import ConfigHookScanError, config_hook_disable_args
+from kiro_crew.platform.update_governance import nested_repo_exec_driver_reason
 
 #: Config-named host execution/read vectors, disabled on OUR argv (``-c`` beats any repo
 #: config). Hooks and fsmonitor are disabled; external attributes/excludes files are pinned
@@ -83,6 +84,9 @@ from kiro_crew.git_config_hooks import ConfigHookScanError, config_hook_disable_
 #: push from recursing into submodule remotes: the egress guard validates only the SINGLE
 #: superproject origin, so an agent that set an attacker-controlled submodule remote plus
 #: recursive push could otherwise ship unscanned submodule objects to an unvalidated host.
+#: ``commit.gpgSign``/``tag.gpgSign`` off: with signing on, ``commit``, ``commit --amend``
+#: and ``rebase`` exec the repo's ``gpg.program`` (measured on git 2.47 under the other pins
+#: here). The app never signs, so the only reason git would run it is an agent's config.
 #: All options must precede the subcommand.
 GIT_SAFE_CONFIG: tuple[str, ...] = (
     "-c",
@@ -95,6 +99,10 @@ GIT_SAFE_CONFIG: tuple[str, ...] = (
     "core.excludesFile=/dev/null",
     "-c",
     "push.recurseSubmodules=no",
+    "-c",
+    "commit.gpgSign=false",
+    "-c",
+    "tag.gpgSign=false",
 )
 
 #: What gets written to ``.git/info/attributes``.
@@ -104,9 +112,14 @@ GIT_SAFE_CONFIG: tuple[str, ...] = (
 #: BUILT-IN textual differ, which unbinds any ``diff=<driver>`` so no ``textconv``/external
 #: diff command runs — while keeping the diff READABLE. ``-diff`` would instead mark every
 #: path binary and blind this app's own credential scanner; see the module docstring.
+#: ``merge`` (SET, for the same reason) pins git's BUILT-IN 3-way merge driver, which
+#: unbinds any ``merge=<driver>`` so ``apply --3way`` and ``rebase`` run no
+#: ``merge.<name>.driver`` (both measured to run one under the other pins). Set is also
+#: what an unspecified path gets by default, binary detection included, so merges are
+#: unchanged; ``-merge`` would instead turn every textual conflict into a binary one.
 #:
-#: Both forms are name-agnostic: they neutralize a driver whose name we never have to learn.
-_ATTRIBUTES_PIN = "* -filter diff\n"
+#: All three forms are name-agnostic: they neutralize a driver whose name we never learn.
+_ATTRIBUTES_PIN = "* -filter diff merge\n"
 
 
 class GitSafetyError(RuntimeError):
@@ -315,8 +328,19 @@ def require_pinned(cwd: Path | str) -> None:
     sandbox escape the pin prevents. A path with NO gitdir is allowed through: there is no
     repo-local config or in-tree ``.gitattributes`` to bind a driver, so no attribute-execution
     surface exists to defend (a pre-clone probe must not be refused).
+
+    Also refuses a tree holding an initialized NESTED repo (a gitlink) whose own config
+    declares a driver: ``add``/``status``/``diff`` start a child git there, the pin above is
+    this repo's and does not reach it, and its ``filter.<name>.clean`` was measured to run
+    (git 2.47). The ``-c`` flags reach the child; a repo-named driver has no key to pin.
     """
-    _pin(cwd)  # raises GitSafetyError on a real-repo pin failure; "no-repo"/"pinned" both OK
+    if _pin(cwd) == "no-repo":  # raises GitSafetyError on a real-repo pin failure
+        return
+    # Probed with the same bare `git` every host-side call here runs, so a host
+    # whose git is outside the trusted system dirs is still checked.
+    refused = nested_repo_exec_driver_reason(str(cwd), git="git")
+    if refused:
+        raise GitSafetyError(f"refusing host-side git in {cwd}: a nested {refused}")
 
 
 def git_argv(cwd: Path | str, *args: str) -> list[str]:

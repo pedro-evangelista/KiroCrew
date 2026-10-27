@@ -144,6 +144,11 @@ def git_checkout(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "kiro_crew.platform.update_governance.update_blocked_reason", lambda url: ""
     )
+    # The fake `subprocess.run` below cannot answer the repo-config probe; that
+    # refusal is covered against a real repo in test_host_git_repo_exec_neutralization.
+    monkeypatch.setattr(
+        "kiro_crew.platform.update_governance.repo_exec_config_reason", lambda proj, **_k: ""
+    )
     monkeypatch.setattr(cli_server.shutil, "which", lambda name: None)
     # The optional kiro-cli step spawns only a PINNED install (resolved with the
     # inherited PATH excluded); none by default, so the host's own install
@@ -744,6 +749,9 @@ def wheel_feed(monkeypatch):
     )
     monkeypatch.setattr(
         "kiro_crew.platform.update_governance.update_blocked_reason", lambda url: ""
+    )
+    monkeypatch.setattr(
+        "kiro_crew.platform.update_governance.repo_exec_config_reason", lambda proj, **_k: ""
     )
 
     def _no_network(*a, **k):

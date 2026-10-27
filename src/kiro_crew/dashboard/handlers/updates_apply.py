@@ -29,7 +29,12 @@ from kiro_crew.executors import subprocess_executor
 from kiro_crew.gateway_restart import resolve_restart_launcher
 from kiro_crew.git_divergence import UNREADABLE_TIMEOUT, DivergenceUnreadable, count_divergence
 from kiro_crew.platform.update_capability import MANAGED_BY_GIT, derive_capability
-from kiro_crew.platform.update_governance import resolve_remote_url, update_blocked_reason
+from kiro_crew.platform.update_governance import (
+    git_command_env,
+    repo_exec_config_reason,
+    resolve_remote_url,
+    update_blocked_reason,
+)
 from kiro_crew.platform_compat import (
     exit_after_failed_restart_exec,
     reexec_launcher,
@@ -370,6 +375,30 @@ async def _snapshot_memory_or_refuse(state: DashboardState) -> web.Response | No
     return web.json_response({"error": message, "code": "memory_snapshot_failed"}, status=500)
 
 
+async def _repo_exec_config_refusal(proj: str) -> web.Response | None:
+    """409 when *proj*'s own git config names a program git would run, else ``None``.
+
+    Offloaded: the probe shells out to git.
+    """
+    exec_config = await asyncio.get_running_loop().run_in_executor(
+        # The bare `git` this handler spawns, and the human-run transport rule
+        # that pairs with `git_command_env(human_transport=True)` below.
+        None,
+        lambda: repo_exec_config_reason(proj, git="git", human_transport=True),
+    )
+    if not exec_config:
+        return None
+    logger.warning("Update refused: %s, which git would run during the update", exec_config)
+    return web.json_response(
+        {
+            "error": f"Update refused: {exec_config}, which git would run during the "
+            "update. Remove it from the checkout's git config, then retry.",
+            "code": "repo_exec_config",
+        },
+        status=409,
+    )
+
+
 async def api_update_apply(request: web.Request) -> web.Response:
     """POST /api/update — git pull, rebuild, restart gateway."""
     owner_denied = await require_owner_dashboard_request(request, "update.apply")
@@ -453,6 +482,19 @@ async def api_update_apply(request: web.Request) -> web.Response:
         logger.warning("Update refused: %s", blocked)
         return web.json_response({"error": blocked, "governance": True}, status=403)
 
+    # Every git call below runs in a checkout an agent can write, and `status`,
+    # `fetch` and `merge` EXEC programs the repository names in its own config
+    # (`core.fsmonitor`, hooks, `filter.<name>.smudge`). The fixed-name keys are
+    # pinned by `git_command_env`; a repo-NAMED driver has no key to pin, so the
+    # update is refused instead -- the same two halves the unattended gateway
+    # apply uses. Checked before any state is pushed, like the source pin.
+    refused = await _repo_exec_config_refusal(proj)
+    if refused is not None:
+        return refused
+    # An owner clicked Update: their own credential helper and ssh command still
+    # apply (left unpinned); the repository's own values were refused above.
+    git_env = git_command_env(human_transport=True)
+
     # Signal updating state via SSE
     state.push_refresh("updating")
 
@@ -462,6 +504,7 @@ async def api_update_apply(request: web.Request) -> web.Response:
         "status",
         "--porcelain",
         cwd=proj,
+        env=git_env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
         start_new_session=platform_compat.IS_POSIX,
@@ -505,7 +548,14 @@ async def api_update_apply(request: web.Request) -> web.Response:
         "git",
         "fetch",
         "--quiet",
+        # The flag beats every remote's configured upload-pack; an env pin does
+        # not (git takes the first value it reads, the repository's), and this
+        # fetch follows the TRACKED remote, which need not be `origin`. The bare
+        # name is what an ssh server accepts, and a local transport resolves it
+        # from git's own exec-path.
+        "--upload-pack=git-upload-pack",
         cwd=proj,
+        env=git_env,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
         start_new_session=platform_compat.IS_POSIX,
@@ -577,6 +627,7 @@ async def api_update_apply(request: web.Request) -> web.Response:
         "--verify",
         "@{u}^{commit}",
         cwd=proj,
+        env=git_env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
         start_new_session=platform_compat.IS_POSIX,
@@ -614,7 +665,9 @@ async def api_update_apply(request: web.Request) -> web.Response:
     try:
         floor_breach = await asyncio.get_running_loop().run_in_executor(
             subprocess_executor(),
-            lambda: dep_sync.incoming_python_floor_breach(Path(proj), target, Path(sys.executable)),
+            lambda: dep_sync.incoming_python_floor_breach(
+                Path(proj), target, Path(sys.executable), env=git_env
+            ),
         )
     except dep_sync.IncomingFloorUnreadable as exc:
         # The pinned revision is real, but its floor could not be read. That is
@@ -635,6 +688,14 @@ async def api_update_apply(request: web.Request) -> web.Response:
             {"error": f"Update refused: {floor_breach}", "code": "python_floor"},
             status=409,
         )
+
+    # Re-read the repo-named driver config right before the merge: the fetch
+    # above can take its full timeout, and a driver planted in that window would
+    # otherwise reach the merge's checkout (a `filter.<name>.smudge` ran on a
+    # fast-forward, measured on git 2.47). Same re-check the gateway apply does.
+    refused = await _repo_exec_config_refusal(proj)
+    if refused is not None:
+        return refused
 
     # Last check before the fast-forward rewrites the install: every refusal
     # above leaves the tree alone, so none of them spends a copy.
@@ -664,6 +725,7 @@ async def api_update_apply(request: web.Request) -> web.Response:
                 "--ff-only",
                 target,
                 cwd=proj,
+                env=git_env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=platform_compat.IS_POSIX,

@@ -37,10 +37,12 @@ if TYPE_CHECKING:
         _resolve_project_relative,
         _run_path_probe,
         _sel,
+        git_command_env,
         is_sensitive_path,
         read_bounded_json,
         redact,
         redact_owner_view_via_context,
+        repo_exec_driver_reason,
         require_owner_dashboard_request,
         sniff_raster_mime,
     )
@@ -484,7 +486,12 @@ async def api_file_diff(request: web.Request) -> web.Response:
         "-c",
         "core.fsmonitor=",
     ]
-    _env = {**os.environ, "GIT_ATTR_NOSYSTEM": "1"}
+    # These calls run in the dashboard process, unsandboxed, in a repo an agent
+    # can write. The `-c` flags above leave hooks open: `status`/`diff` refresh
+    # the index and fire `post-index-change` from `.git/hooks` (measured on git
+    # 2.47). `git_command_env` pins hooks and every other fixed-name exec key;
+    # a repo-named filter driver is refused below, before the first diff.
+    _env = {**git_command_env(), "GIT_ATTR_NOSYSTEM": "1"}
 
     def _run() -> dict:
         try:
@@ -524,6 +531,15 @@ async def api_file_diff(request: web.Request) -> web.Response:
                 env=_env,
             ).stdout.strip()
             rel = os.path.relpath(raw_path, root)
+            # `diff HEAD` and `status` run a repo-named `filter.<name>.clean` on
+            # the file, and `diff.textconv=` does not reach `diff.<name>.command`
+            # or a config-defined hook. None has a key to pin, so such a repo
+            # gets no diff rather than a program run on the host.
+            # `dirpath`, the cwd every call below runs in, so the probe discovers
+            # the same repository they do (`root` is a stripped display value).
+            # Probed with the same bare `git` the calls below run.
+            if repo_exec_driver_reason(dirpath, git="git"):
+                return {"diff": "", "original": "", "status": "error"}
             head = subprocess.run(
                 # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args -- fixed git argv; the path is repo-relative and passed as one argument
                 [*_git, "show", "--no-textconv", f"HEAD:{rel}"],

@@ -317,6 +317,8 @@ class TestBuildTarball:
     def test_clean_tree_prefers_git_archive(self, monkeypatch, tmp_path):
         # The fast path (git archive) is still used when the tree is clean.
         monkeypatch.setattr(source, "_tracked_tree_is_dirty", lambda root: False)
+        # tmp_path is no repository; a driver-free one is what this row is about.
+        monkeypatch.setattr(source, "repo_exec_driver_reason", lambda root, **_k: "")
         sentinel = tmp_path / "archive.tar.gz"
         sentinel.write_bytes(b"x")
         monkeypatch.setattr(source, "_use_git_archive", lambda root, **k: sentinel)
@@ -596,6 +598,8 @@ class TestSourceChecksumPin:
         (tmp_path / "app.py").write_text("x = 1\n")
         monkeypatch.setattr(source, "_git_tracked_files", lambda root: ["app.py"])
         monkeypatch.setattr(source, "_tracked_tree_is_dirty", lambda root: False)
+        # tmp_path is no repository; the archive attempt must still be reached.
+        monkeypatch.setattr(source, "repo_exec_driver_reason", lambda root, **_k: "")
         handed: list[object] = []
         real_fallback = source._tar_fallback
 
