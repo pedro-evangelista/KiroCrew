@@ -326,9 +326,8 @@ function TreeContextMenu({ item, context, root, onAddToContext, contribItems, on
         </div>
       )}
       {/* Built-in Download for a file row. Streams the raw bytes through the
-          SAME /api/file-download path the viewer's Download uses, so the
-          endpoint's credential scan runs before any byte reaches the browser; a
-          refusal is surfaced through the tree's error notice, never bypassed.
+          SAME /api/file-download path the viewer's Download uses; a failure is
+          surfaced through the tree's error notice.
           Its ref is `firstItemRef` only when there is no Add-to-chat row above
           it to own focus entry. */}
       {canDownload && (

@@ -294,16 +294,7 @@ _CREW_PRECREATE_READONLY_FILE_LEAVES: tuple[str, ...] = (
     "oauth_endpoints.json",
     "aws_service_consent.json",
     "decisions_consent.json",
-    # ``file_delivery_consent._read_all`` returns ``{}`` for both absent and
-    # unreadable, and ``is_granted`` then reports no consent -- so an EMPTY
-    # document means exactly what an ABSENT one means (criterion 1). A stale
-    # sealed read also fails toward refusal: the writer publishes through
-    # ``atomic_write`` (new inode), so a sandboxed reader keeps seeing ``{}`` and
-    # stays frozen at "no consent", which is narrower than the truth
-    # (criterion 2).
-    "file_delivery_consent.json",
-    # Consent to forward SSH_AUTH_SOCK satisfies both criteria the way
-    # ``file_delivery_consent.json`` does: ``ssh_auth_sock_consent.is_granted``
+    # Consent to forward SSH_AUTH_SOCK: ``ssh_auth_sock_consent.is_granted``
     # reports no consent for an absent, empty, AND unreadable store alike, so a
     # pre-created ``{}`` means exactly "not forwarded" (criterion 1); the writer
     # publishes through ``atomic_write`` (new inode), so a sandboxed reader frozen
@@ -313,7 +304,7 @@ _CREW_PRECREATE_READONLY_FILE_LEAVES: tuple[str, ...] = (
     # namespace sandbox.
     "ssh_auth_sock_consent.json",
     # The credential-redaction switch satisfies both criteria the way
-    # ``file_delivery_consent.json`` does: ``redaction_switch.read_state`` reads
+    # ``ssh_auth_sock_consent.json`` does: ``redaction_switch.read_state`` reads
     # absent, empty and unreadable alike as ENABLED, so a pre-created ``{}``
     # means exactly what an absent file means (criterion 1); the writer
     # publishes through ``atomic_write`` (new inode), so a sandboxed reader
@@ -322,7 +313,7 @@ _CREW_PRECREATE_READONLY_FILE_LEAVES: tuple[str, ...] = (
     "credential_redaction.json",
     "settings_seeds.json",
     # The operator's grants of ``owner`` trust to a hand-configured app registry.
-    # Satisfies both criteria the way ``file_delivery_consent.json`` does:
+    # Satisfies both criteria the way ``ssh_auth_sock_consent.json`` does:
     # ``registry._granted_owner_repos`` reads an absent, empty, AND ``{}``-versioned
     # document alike as NO grants (a ``{}`` carries no matching ``version``), so a
     # pre-created ``{}`` means exactly "no registry is owner-trusted" (criterion 1);
@@ -366,7 +357,7 @@ _CREW_PRECREATE_READONLY_FILE_LEAVES: tuple[str, ...] = (
     # reads as unconfigured -- narrower than the truth, never wider.
     "cloud.json",
     # The fork-lineage sidecar satisfies both criteria the way
-    # ``file_delivery_consent.json`` does: ``agent_state._read`` returns ``{}``
+    # ``ssh_auth_sock_consent.json`` does: ``agent_state._read`` returns ``{}``
     # for absent, unreadable, AND an empty document alike, so a pre-created
     # ``{}`` means exactly "no lineage recorded" (criterion 1); the writer
     # publishes through ``atomic_write`` (new inode), so a sandboxed reader
@@ -411,15 +402,6 @@ _CREW_PRECREATE_READONLY_FILE_LEAVES: tuple[str, ...] = (
 #: any clone, so materialising it early changes nothing it relies on.
 _CREW_PRECREATE_HIDDEN_DIR_LEAVES: tuple[str, ...] = (
     "aws-control-staging",
-    # Same lazily-created shape as aws-control-staging: the file-delivery step-up
-    # nonce dir is created on demand only when the owner first ARMS a grant
-    # (``file_delivery_consent.arm_grant`` -> ``make_owner_only_dir(path.parent)``).
-    # On a fresh install with no prior arm the leaf is absent at spawn, the
-    # ``isdir``-guarded sensitive_dirs loop skips it, and a later dashboard arm
-    # materialises the nonce INSIDE a running sandbox's view -- where a same-UID
-    # agent reads it and drives the loopback /approve to self-grant. Precreated
-    # (empty, 0o700) before every spawn so the mask always has a name to bind over.
-    "file-delivery-consent-pending",
     "appearance-library",
     "quarantined-clones",
     # First created by the first member-born session's vouch, so a sandbox spawned

@@ -80,7 +80,7 @@ to the facade's `_OWNERS`, to `OWNERS` in that test and to `_BANNED_AFTER_CLI_IM
 `test/test_cli_lazy_imports.py`.
 
 `kiro_crew/cli_server.py` holds the server-lifecycle commands `main()` dispatches to. It
-keeps `file-delivery approve`, `status`, `gateway`, `run`, `service`, `sandbox` and `logs`;
+keeps `status`, `gateway`, `run`, `service`, `sandbox` and `logs`;
 the gateway peer proof, the owner requests (`token`, `logout`, `update approve`), `stop`,
 `restart` and `update` live in its owners, and new work for each goes to its module:
 
@@ -669,8 +669,7 @@ operator to restart a gateway that works.
 The same busy-vs-unreachable split applies to the other CLI calls that reach the
 local gateway (`TimeoutError` is an `OSError`, so a timeout must be told apart
 from a refused connection or a slow live gateway reads as down). `kirocrew spawn
-list`/`spawn run`, `kirocrew logout`, `kirocrew update` approve, `kirocrew
-file-delivery approve`, `kirocrew cron trigger` and `kirocrew status` classify a
+list`/`spawn run`, `kirocrew logout`, `kirocrew update` approve, `kirocrew cron trigger` and `kirocrew status` classify a
 timeout through the one public `loopback_http.deadline_expired` seam (beside
 `loopback_urlopen`): a read timeout or a `URLError` wrapping a connect timeout
 reports the gateway as up but busy, and only a refused connection keeps the
@@ -682,9 +681,9 @@ was accepted and the gateway then stalled) as busy and report a connect-phase
 timeout as not running, rather than reading a stopped gateway as busy. A call
 whose request is not idempotent does not advise a blind retry: `spawn run` and
 `cron trigger` carry a request the gateway may act on after the client times out
-(spawn points at `kirocrew spawn list`), and `update` approve and `file-delivery`
-approve carry a single-use nonce the gateway may already have consumed, so their
-busy lines point at the dashboard rather than inviting a re-run.
+(spawn points at `kirocrew spawn list`), and `update` approve carries a single-use
+nonce the gateway may already have consumed, so its busy line points at the
+dashboard rather than inviting a re-run.
 
 The contract exists because stdout is parsed, not just read by a human. The
 remote-mint path (`kiro_crew.instances.token_mint.mint_remote_token`) runs
@@ -1745,7 +1744,6 @@ byte:
 |---|---|---|
 | `kirocrew spawn list` / `spawn run`, `kirocrew artifact` (`cli_commands_gateway_api._gateway_send`) | `_owner_verified_secret_urlopen`, both arms | `Error: gateway ownership not verified: …`, exit 1 (`artifact` prints it on stderr) |
 | `spawn run`'s result poll (`_gateway_send`, operation `cli_spawn_poll`) | `_owner_verified_secret_urlopen`, both arms; every poll is audited | the same message on stderr, exit 1 |
-| `kirocrew file-delivery approve` (`_file_delivery_approve`) | `_owner_verified_secret_urlopen`, both arms | ownership message, exit 1 |
 | `kirocrew doctor` adaptive-controller read (`doctor_checks.workload._gateway_adaptive_state`) | `_owner_verified_secret_urlopen`, both arms | one `not read` line naming the unproven peer |
 | `app_lifecycle_client` (mint and action) | owner-only unix socket only; `verify_peer` requires `_connected_unix_peer_is_recorded_gateway` | `AppGatewayError` (not an `OSError`), so the CLI never drops to its file-only path |
 | `memory_forget_client` (mint and delete) | owner-only unix socket only; `_gateway_peer_verifier` wraps `_connected_unix_peer_is_recorded_gateway` and refuses up front when `_recorded_gateway_pid` has no pid | `ForgetRefused` |

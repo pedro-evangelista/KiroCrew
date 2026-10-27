@@ -272,17 +272,6 @@ _CREW_HIDDEN_LEAVES: tuple[str, ...] = (
     # race. Precreating it would re-materialise the retired name on every machine.
     "ledgers",
     "cron-history",
-    # The single-use step-up nonce that authorizes recording a flagged-file
-    # delivery grant. Whole DIRECTORY (arm renames a sibling ``.tmp`` into place),
-    # with NO in-sandbox reader: the gateway writes it on arm and the host
-    # ``kirocrew file-delivery approve`` reads it. Masked because a same-UID agent
-    # could otherwise FORGE a nonce here with a runtime-constructed shell path
-    # (the file gate's text/argv matcher does not see such a path) and then drive
-    # the owner's loopback browser to POST that chosen nonce, recording a grant
-    # with no human present -- the exact self-approval hole the step-up exists to
-    # close. Deliberately NOT under ``trust/``, which is sandbox-visible for SEL
-    # appends.
-    "file-delivery-consent-pending",
     # The cron in-flight markers, masked rather than sealed read-only because
     # nothing in the sandbox reads one: they are written and cleared by the run
     # task in the GATEWAY process, and the boot-time loop-stall breaker that acts
@@ -540,14 +529,6 @@ _CREW_READONLY_LEAVES: tuple[str, ...] = (
     # writer, an empty directory reads as "no host allowed", and a directory bind
     # shows the gateway's later writes live.
     "redaction-allow",
-    # Recorded consent to deliver a scanner-flagged file. Same class as
-    # ``aws_service_consent.json``: a writable grant lets an auto-approved agent
-    # consent, on the owner's behalf, to shipping the owner's secrets. This seal is
-    # the load-bearing half of that design -- ``is_sensitive_path`` covers the leaf
-    # on the file-tool path, but the shell gate matches no paths at all, and as the
-    # READONLY note above says a kernel write denial is what holds regardless of
-    # how a command spells the way there.
-    "file_delivery_consent.json",
     # Recorded consent to forward SSH_AUTH_SOCK into the sandbox. Same class as
     # ``aws_service_consent.json``: keeping the socket grants USE of the operator's
     # ssh-agent keys for the session, so a writable enable lets a prompt-injected
@@ -891,7 +872,6 @@ _CREW_CHILD_WITHHELD_LEAVES: tuple[str, ...] = (
     "computer_use.json",
     "oauth_endpoints.json",
     "decisions_consent.json",
-    "file_delivery_consent.json",
     "ssh_auth_sock_consent.json",
     "credential_redaction.json",
     # The paid-AWS consent grant. Unlike its sibling consent records this one stores

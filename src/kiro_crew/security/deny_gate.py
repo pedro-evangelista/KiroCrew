@@ -743,7 +743,6 @@ def is_denied(
     for rule_id, predicate in (
         ("self-protection-restart", _argv._is_self_restart),
         ("self-protection-update", _argv._is_self_update),
-        ("self-protection-file-delivery", _argv._is_self_file_delivery),
         ("self-protection-gateway-restart", _argv._is_self_gateway_restart),
         ("self-protection-cloud", _argv._is_self_cloud_destructive),
         ("self-protection-skills-authority-retire", _argv._is_self_skills_authority_retire),

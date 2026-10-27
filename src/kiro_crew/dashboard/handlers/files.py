@@ -55,7 +55,7 @@ from aiohttp import web
 from aiohttp.client_exceptions import ClientConnectionResetError  # noqa: F401
 from aiohttp.multipart import BodyPartReader  # noqa: F401
 
-from kiro_crew import executors, file_delivery_consent, pinned_fs, platform_compat  # noqa: F401
+from kiro_crew import executors, pinned_fs, platform_compat  # noqa: F401
 from kiro_crew._facade_compose import compose as _facade_compose
 from kiro_crew.atomic_write import (  # noqa: F401
     atomic_write,
@@ -180,10 +180,8 @@ from kiro_crew.dashboard.file_api.office_preview import (  # noqa: F401
     api_file_office_preview,
 )
 from kiro_crew.dashboard.file_api.outbox import (  # noqa: F401
-    _audit_consented_download,
-    _audit_owner_grant_refusal,
+    _caller_is_owner,
     _list_outbox_entries,
-    _owner_grant_releases_flagged,
     _read_outbox_file,
     api_outbox_download,
     api_outbox_list,
@@ -549,11 +547,8 @@ _UPLOAD_DIR: Path | None = None
 
 
 _MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB per file
-#: Largest file ``/api/file-download`` reads whole and scans for credentials.
-#: A larger one is streamed UNSCANNED once the owner confirms (409
-#: ``large_file_unscanned`` until then): the scan holds the whole file in
-#: memory, and the route is owner-only. The maintainer's decision; see the
-#: security spec.
+#: Largest file ``/api/file-download`` reads whole into memory. A larger one is
+#: streamed in bounded chunks. The route is owner-only and does not scan content.
 _DOWNLOAD_SCAN_MAX_BYTES = _MAX_UPLOAD_BYTES
 #: How long one chunk read of an unscanned download may take before the
 #: response is dropped. A healthy disk answers a chunk in milliseconds; a hung

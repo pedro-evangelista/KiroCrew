@@ -224,13 +224,6 @@ NON_EGRESS_REDACTION_MODULES: frozenset[str] = frozenset(
         # a third party — the surfaces that SHOW a refusal (the dashboard's
         # notice line) are the registered sinks.
         "name_grant.py",
-        # Same shape as name_grant: audit_decision scrubs the caller-supplied
-        # detail (a refusal reason, a delivery description) before the 200-char
-        # clip and before writing the file_delivery_consent SEL row. A gate-side
-        # audit record, not an output bound for a human or a third party; the
-        # consent card and the tool's own error string are the surfaces that
-        # show a refusal, and those are owned by their registered sinks.
-        "file_delivery_consent.py",
         # Detector, not redactor: the decision seam runs redact_credentials
         # AND redact_exfiltration_urls over the state it is about to send to a
         # third-party judge, then DISCARDS both cleaned strings and refuses the

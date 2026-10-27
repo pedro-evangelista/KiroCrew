@@ -456,7 +456,6 @@ def main() -> None:
     cli_parser_admin.register_secrets_parser(sub)
     cli_parser_admin.register_pod_parser(sub)
     cli_parser_gateway.register_update_parser(sub)
-    cli_parser_admin.register_file_delivery_parser(sub)
     cli_parser_gateway.register_stop_parser(sub)
     cli_parser_gateway.register_restart_parser(sub)
     cli_parser_gateway.register_gateway_pid_parser(sub)
@@ -963,10 +962,6 @@ def main() -> None:
             from kiro_crew.cli_server import _update
 
             _update(force=args.force)
-    elif args.command == "file-delivery":
-        from kiro_crew.cli_server import _file_delivery_approve
-
-        _file_delivery_approve()
     elif args.command == "stop":
         from kiro_crew.cli_server import _stop
 

@@ -855,7 +855,6 @@ if TYPE_CHECKING:  # every owner-defined name this module forwards, for type che
         credential_redaction_path,
         decisions_consent_path,
         denied_commands_path,
-        file_delivery_consent_path,
         materialize_workspace_dir,
         normalize_workspace_path,
         oauth_endpoints_path,

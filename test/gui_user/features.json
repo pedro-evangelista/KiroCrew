@@ -7153,7 +7153,7 @@
         "seed": "minimal",
         "members": [],
         "feature_flags": [],
-        "notes": "Add and remove one user rule; file-delivery consent has no panel yet. | SECURITY_SECTIONS in SecurityPanel.tsx; approval mode also cycled by keyboard shortcut in App.tsx. | Rendered from GET /api/security/posture registry via PostureDisclosureRow."
+        "notes": "Add and remove one user rule. | SECURITY_SECTIONS in SecurityPanel.tsx; approval mode also cycled by keyboard shortcut in App.tsx. | Rendered from GET /api/security/posture registry via PostureDisclosureRow."
       },
       "runnable": "smoke",
       "estimated_steps": 3,

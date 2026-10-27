@@ -73,7 +73,6 @@ import ShortcutsModal from './components/ShortcutsModal'
 import QuickSearchSurface from './components/QuickSearchSurface'
 import ReportProblemModal from './components/ReportProblemModal'
 import KiroAccountModal from './components/KiroAccountModal'
-import UnscannedDownloadConfirmHost from './components/UnscannedDownloadConfirmHost'
 
 import { StartupVideo } from './shell/boot/startupVideo'
 import { i18nT } from './i18n/t'
@@ -924,8 +923,6 @@ export default function App() {
     )}
     </WsContext.Provider>
     {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
-    {/* Answers the "Too large to scan" question a file download asks. */}
-    <UnscannedDownloadConfirmHost />
     <QuickSearchSurface
       owners={slotOwners}
       open={commandPalette.open}

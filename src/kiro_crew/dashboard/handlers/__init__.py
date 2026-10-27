@@ -1056,17 +1056,6 @@ from kiro_crew.dashboard.handlers.decisions import (  # noqa: E402, F401
     api_decisions_provider_get,
     api_decisions_provider_put,
 )
-
-# Flagged-file delivery consent — owner-gated, and the ONLY writer of
-# ``file_delivery_consent.json``. Recording is arm (owner POST) + approve
-# (host-only ``kirocrew file-delivery approve``, which consumes the nonce).
-from kiro_crew.dashboard.handlers.file_delivery_consent import (  # noqa: E402, F401
-    api_file_delivery_consent_approve,
-    api_file_delivery_consent_arm_status,
-    api_file_delivery_consent_delete,
-    api_file_delivery_consent_get,
-    api_file_delivery_consent_post,
-)
 from kiro_crew.dashboard.handlers.notifications_push import (  # noqa: E402, F401
     api_push_notification,
     api_push_subscribe,

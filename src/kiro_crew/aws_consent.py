@@ -114,8 +114,7 @@ SERVICE_LABELS: dict[str, str] = {
 #: forge it; what it could do is block the owner's REVOKE, leaving consent active
 #: for subsequent billable calls. A consent mechanism whose withdrawal can be
 #: denied by the party the consent constrains is defective in its central
-#: promise, so there is no lock file to hold. Same treatment, and the same
-#: reasoning, as ``file_delivery_consent._STORE_LOCK``.
+#: promise, so there is no lock file to hold.
 #:
 #: One writing PROCESS is what makes this sufficient. Every writer of this store
 #: runs in the gateway process, on its ``asyncio.to_thread`` pool: the

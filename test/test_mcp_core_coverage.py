@@ -1308,17 +1308,15 @@ class TestFileSend:
         out = _call_tool("file_send", {"path": str(tmp_path / "nope.txt")})
         assert "file not found or access denied" in out
 
-    def test_sensitive_content_aborts_the_send(self, tmp_path):
+    def test_sensitive_content_is_delivered_to_the_outbox(self, tmp_path):
+        # The owner's own outbox gets the bytes as-is; the Slack and channel
+        # upload legs scan on their own, server-side.
         src = tmp_path / "creds.txt"
         src.write_text("AKIA" + "P" * 16)
-        out = _call_tool("file_send", {"path": str(src)})
-        assert out.startswith("Error: file content contains sensitive data; send aborted")
-        # The refusal now names the remedy. A wall that does not say a consented
-        # path exists is the reported complaint, so this
-        # asserts MORE than the previous exact-equality pin, not less -- and it
-        # asserts the never-grantable legs are named as such.
-        assert "/api/file-delivery/consent" in out
-        assert "can never be granted" in out
+        with patch.object(mcp_core, "_post", return_value={"ok": True}):
+            out = _call_tool("file_send", {"path": str(src)})
+        assert out.startswith("File sent: creds.txt")
+        assert (mcp_core.outbox_dir() / "creds.txt").read_text() == "AKIA" + "P" * 16
 
     def test_disallowed_binary_mime_is_refused(self, tmp_path):
         src = tmp_path / "payload.bin"

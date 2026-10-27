@@ -367,7 +367,7 @@ component moved whole, so each one registers its hooks in its BASE order.
 |---|---|
 | `SecurityPanel.tsx` | the rail: `SECURITY_SECTIONS`, `SECTION_LABEL_KEY` (read by `gen-ui-index.mjs`), `SECTION_GROUP_KEY`, the rail summaries, the panel, and the Documentation section |
 | `SecurityPanelPosture.tsx` | Live security posture, and the status row and chip the tailnet card reuses |
-| `SecurityPanelApprovals.tsx` | the ad-hoc auto-approve duration card and the flagged-file delivery consent card |
+| `SecurityPanelApprovals.tsx` | the ad-hoc auto-approve duration card |
 | `SecurityPanelDeniedCommands.tsx` | Denied commands: the built-in rules by category, the custom deny patterns, the pinned and floor tooltip keys |
 | `SecurityPanelTailnet.tsx` | the tailnet origin card and `TAILNET_STATE_KEY`, which the rail summary reads |
 | `SecurityPanelTrust.tsx` | third-party app trust grants, per-registry Git-identity trust grants, and their failure messages |

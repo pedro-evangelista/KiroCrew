@@ -495,9 +495,9 @@ _DELIVERY_SINKS: tuple[tuple[str, str, str], ...] = (
         "File watch frames",
         "dashboard/file_api/transfer.py",
         "The file-watch SSE frames (api_file_watch) are redacted before they are "
-        "pushed. The file download and the Range stream serve the file's own "
-        "bytes and use redact() as a GATE: a file whose text the redactor would "
-        "change is refused, not served masked.",
+        "pushed. The owner-only file download serves the file's own bytes "
+        "without a content scan. The Range stream uses redact() as a GATE: a "
+        "file whose text the redactor would change is refused, not served masked.",
     ),
     (
         "Office document preview",

@@ -1325,9 +1325,9 @@ class TestStatusMemoryLine:
 
 
 class TestApproveBusyVsDown:
-    """The update-approve and file-delivery-approve CLI paths report a slow
-    gateway as busy, and a refused connection as not running. Both carry a
-    single-use nonce, so the busy line points at the dashboard, never a retry.
+    """The update-approve CLI path reports a slow gateway as busy, and a
+    refused connection as not running. It carries a single-use nonce, so the
+    busy line points at the dashboard, never a retry.
     """
 
     def test_update_approve_timeout_reports_busy(self, monkeypatch, capsys) -> None:
@@ -1354,26 +1354,6 @@ class TestApproveBusyVsDown:
         monkeypatch.setattr(cli_server, "_owner_verified_secret_urlopen", _timeout)
         with pytest.raises(SystemExit) as exc:
             cli_server._update_approve()
-        assert exc.value.code == 1
-        out = capsys.readouterr().out
-        assert "busy" in out
-        assert "is not running" not in out
-
-    def test_file_delivery_approve_timeout_reports_busy(self, monkeypatch, capsys) -> None:
-        from kiro_crew import file_delivery_consent
-
-        pending = types.SimpleNamespace(destination_class="owner", expires_in=60, nonce="n" * 64)
-        monkeypatch.setattr(file_delivery_consent, "read_pending_grant", lambda: pending)
-        monkeypatch.setattr(cli_server, "resolve_client_port", lambda _p: 7777)
-        monkeypatch.setattr(cli_server, "read_local_secret", lambda _p, **_kw: "")
-
-        def _timeout(*a, **k):
-            raise TimeoutError("timed out")
-
-        # The proven send is the one transport seam, socket or TCP alike.
-        monkeypatch.setattr(cli_server, "_owner_verified_secret_urlopen", _timeout)
-        with pytest.raises(SystemExit) as exc:
-            cli_server._file_delivery_approve()
         assert exc.value.code == 1
         out = capsys.readouterr().out
         assert "busy" in out
