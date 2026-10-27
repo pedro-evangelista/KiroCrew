@@ -188,7 +188,6 @@
     "cpu": "CPU",
     "cpu_unavailable": "CPU: no disponible",
     "credits": "créditos",
-    "developer": "Desarrollador",
     "discord_community": "Comunidad de Discord",
     "disk_unavailable": "Disco: no disponible",
     "dismiss": "Descartar",
@@ -6655,7 +6654,6 @@
           "knowledge": "Conocimiento"
         },
         "pagesProvider": {
-          "developer": "Desarrollador",
           "kirocrew_agents": "Agentes de {{productName}}",
           "logs": "Registros",
           "pages": "Páginas",
@@ -10009,7 +10007,6 @@
       "select_confirm_unseen_job": "Esta tarea ya está abierta. Pulsa Siguiente para seguir con ella o elige antes otra tarea.",
       "select_open_named": "Abierto ahora: “{{name}}”.",
       "gate_setting": "Activa primero «{{label}}» en Ajustes. La guía sigue sola en cuanto esté activado; nunca cambia el ajuste por ti.",
-      "gate_developer_mode": "Activa primero el modo desarrollador en Ajustes. La guía sigue sola en cuanto esté activado.",
       "gate_terminal_enabled": "El terminal está desactivado en esta instalación. La guía sigue sola en cuanto se active.",
       "title_ui_find": "Buscar “{{label}}”",
       "step_ui_find_open": "Abre el control resaltado: “{{target}}” está dentro.",
@@ -13855,42 +13852,32 @@
       }
     },
     "developerPage": {
-      "developer": "Desarrollador",
       "tabs": {
         "archive": {
-          "description": "Historial de sesiones rotado o compactado (retención de 7 días)",
           "label": "Archivo"
         },
         "config": {
-          "description": "Configuración de {{productName}} y del agente: los cambios se guardan al instante",
           "label": "Configuración"
         },
         "debugTools": {
-          "label": "Herramientas de depuración",
-          "description": "Superposiciones que muestran en el dispositivo lo que la aplicación hace consigo misma."
+          "label": "Herramientas de depuración"
         },
         "logs": {
-          "description": "Visor de registros en vivo con filtrado por nivel y búsqueda",
           "label": "Registros"
         },
         "mcpPool": {
-          "description": "Poner un stub a los servidores MCP y compartir sus backends entre sesiones",
           "label": "Gestión de MCP"
         },
         "memory": {
-          "description": "Grafo de memoria, proveedor de embeddings y detalles internos del almacén vectorial",
           "label": "Memoria"
         },
         "storage": {
-          "description": "Uso de localStorage, cuotas y recolección de basura",
           "label": "Almacenamiento"
         },
         "system": {
-          "description": "Métricas de CPU, memoria, red y procesos",
           "label": "Sistema"
         },
         "telemetry": {
-          "description": "Latencia de arranque de la sesión (p50/p90) y métricas de aceleración de MCP y habilidades",
           "label": "Telemetría"
         }
       }
@@ -17005,15 +16992,12 @@
         "retry": "Reintentar"
       },
       "developerPanel": {
-        "developer_mode": "Modo de desarrollador",
         "developer_tools": "Herramientas de desarrollo",
         "feature_previews": "Vistas previas de funciones",
         "feature_previews_desc": "Funciones y páginas sin publicar. Las páginas siguen ocultas de la barra lateral y de Buscar en todo hasta que las actives aquí; los propios interruptores sí aparecen en la búsqueda de configuración. Sin terminar a propósito y solo para este dispositivo, salvo que una tarjeta indique lo contrario.",
         "gateway": "Gateway",
         "how_to_set_up_an_ssh_tunnel": "Cómo configurar un túnel SSH",
-        "open_developer_page": "Abrir la página Desarrollador",
         "run_a_local_gateway": "Ejecutar un gateway local",
-        "show_developer_page_in_sidebar_with_logs_system": "Mostrar la página Desarrollador en la barra lateral con registros, métricas del sistema y detalles internos de la memoria",
         "turn_it_off_only_when_a_gateway_already_answers": "Inicia un gateway en este equipo. Déjalo activado salvo que el puerto de esta app ya llegue a un Crew en otro equipo; si no, la app no podrá conectarse la próxima vez que se abra, que es cuando se aplica este cambio. Para eso, el Crew debe estar guardado para este puerto con “Set Remote Host…” en el menú Connection, más un túnel: marca “Keep an SSH tunnel to this crew open” allí (macOS y Linux) o mantén tu propio túnel SSH en marcha. Las conexiones de Ajustes → Crew remoto se detienen cuando esto está desactivado, así que no cuentan."
       },
       "discordPanel": {
@@ -19570,7 +19554,7 @@
         "label": "Uso del ordenador"
       },
       "developer": {
-        "description": "Modo de desarrollador, vistas previas de funciones, registros, métricas del sistema y diagnósticos",
+        "description": "Vistas previas de funciones, registros, métricas del sistema y diagnósticos",
         "label": "Desarrollador"
       },
       "display": {

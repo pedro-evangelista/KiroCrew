@@ -54,7 +54,6 @@ vi.mock('../../utils/terminalRegistry', () => ({
   useTerminalEnabled: () => true,
   useTerminalTitle: () => 'Terminal',
 }))
-vi.mock('../../hooks/useDevMode', () => ({ useDevMode: () => false }))
 
 /* The stub exposes the host-provided opener as a button, so a test can press
  * "Ask" the way the pane's selection toolbar would (the toolbar itself is the

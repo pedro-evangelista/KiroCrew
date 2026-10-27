@@ -37,7 +37,7 @@ import { useMayLeaveForNavigation } from '../components/NavigationLeaveGuard'
 import { useMotionValue, useTransform } from 'framer-motion'
 import { useDrawerSwipe, animateDrawer, registerDrawerTargets, takeOverDrawer, safeAreaLeft } from '../hooks/useDrawerSwipe'
 import { useTopbarCollapse } from '../lib/useTopbarCollapse'
-import { subscribeNativeNavigate, useMacFullscreen } from './platform/electronBridge'
+import { showNativeDevTools, subscribeNativeNavigate, useMacFullscreen } from './platform/electronBridge'
 import { useNativeHistoryStep } from './platform/nativeHistoryStep'
 import AppIcon from '../components/AppIcon'
 import { useUpdateFlow } from './updates/updateFlow'
@@ -60,7 +60,6 @@ import { appNavTarget } from '../appNav'
 import { useGlobalApprovalCount, useRailBadges } from './nav/railBadges'
 import { resolveSlotOverlays, type SlotOwners } from '../apps/overlaySlots'
 import { isChatRoute, useRouteActiveModel } from './nav/routeActive'
-import { useDeveloperMode } from './nav/developerMode'
 import { appPathname } from '../lib/basePath'
 
 /** Mobile nav drawer travel: its 220px width + the 8px mx-2 inset + border. */
@@ -687,12 +686,11 @@ export function useAppShell() {
   const metrics = useMetricsReadout(isMobile, updateAvailable, topbarLevels.right)
   const { capsuleCollapsed, setCapsuleCollapsed, capsuleLayoutPulse, pulseCapsuleLayout, sysMetrics, metricsProbeRef, metricsGroupRef } = metrics
 
-  const { devMode, devPageSeen } = useDeveloperMode(location.pathname)
-  // Guide facts the shell knows: the two gates a guide pauses on (it never
-  // flips either), the phone menu's scope, and whether this is the Sessions
-  // page (whose own drawer replaces the menu button there).
-  useGuideGate('developer_mode', devMode)
+  // Guide facts the shell knows: the gate a guide pauses on (it never flips
+  // it), the phone menu's scope, and whether this is the Sessions page (whose
+  // own drawer replaces the menu button there).
   useGuideGate('terminal_enabled', terminalEnabled)
+  useEffect(() => { showNativeDevTools() }, [])
   useGuidePredicate('not_on_sessions_page', location.pathname !== '/sessions')
   // Whether the rail draws Connect your phone at all: the pairing guide's blocker otherwise.
   useGuidePredicate('phone_connect_available', hasRenderableMobileConnect)
@@ -880,7 +878,7 @@ export function useAppShell() {
     toggleAppsExpanded, slotOwners, appBadges, discoverBadges, railAppBadges, railAppRunStates, shortcutsOpen,
     setShortcutsOpen, toggleShortcutsModal, commandPalette, agentSwitchNotice, kiroUsageOpen, setKiroUsageOpen,
     kiroUsageState, usageSegmentHidden, kiroAccountEntry, metrics, capsuleCollapsed, setCapsuleCollapsed,
-    capsuleLayoutPulse, pulseCapsuleLayout, sysMetrics, metricsProbeRef, metricsGroupRef, devMode, devPageSeen,
+    capsuleLayoutPulse, pulseCapsuleLayout, sysMetrics, metricsProbeRef, metricsGroupRef,
     subscribeLogs, subscribeSubagents, forceReconnect, updateFlow, updating, setUpdating, showUpdateModal,
     setShowUpdateModal, showChangelog, updateError, setUpdateError, startupVideo, reportProblemOpen,
     setReportProblemOpen, requestFeature, toggleNav, effectiveCollapsed, closeMobileNav, activePath,

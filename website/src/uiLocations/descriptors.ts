@@ -104,6 +104,12 @@ export const SEARCH_TERMS: Record<string, UiSearchTerms> = {
     en: ['installed skills', 'my skills', 'skill list'],
     'zh-CN': ['已安装的技能', '我的技能', '技能列表'],
   },
+  // Settings > Developer holds the internals pages (logs, system metrics,
+  // memory graph, MCP pool) and the feature previews.
+  'settings.tab.developer': {
+    en: ['developer page', 'developer tools', 'dev tools', 'debug tools', 'developer settings page'],
+    'zh-CN': ['开发者页面', '开发者工具', '调试工具'],
+  },
   'settings.tab.secrets': {
     en: ['api key', 'api keys', 'credentials', 'tokens', 'passwords'],
     'zh-CN': ['密钥', 'api 密钥', '凭据', '凭证', '令牌'],

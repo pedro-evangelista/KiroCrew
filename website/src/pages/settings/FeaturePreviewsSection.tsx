@@ -17,12 +17,9 @@ import { i18nT } from '../../i18n/t'
  * Settings > Developer > Feature Previews — opt in to surfaces that ship in the
  * bundle but are not released yet (see `utils/previewFlags.ts`).
  *
- * Formerly its own tab on the standalone Developer page (`/developer`). It moved
- * here because the switch that HOLDS an unreleased feature belongs next to the
- * switch that REVEALS the developer tooling (Developer Mode, one section up):
- * both are consent gates, and a reader looking for "how do I turn the unfinished
- * thing on" looks in Settings, not on an internals page they first have to
- * unlock. `DeveloperPage.tsx` redirects the old
+ * The first page of the Developer tab's SubNav (`DeveloperPanel.tsx`), above
+ * the internals pages: a reader looking for "how do I turn the unfinished
+ * thing on" finds it first. `DeveloperPage.tsx` redirects the old
  * `/developer?tab=feature-previews` link here.
  *
  * The USER-FACING copy says "features" and "pages", never "surfaces": `Surface`
@@ -30,8 +27,7 @@ import { i18nT } from '../../i18n/t'
  * toggle. The component and catalog keys keep the code vocabulary on purpose —
  * they name the mechanism, not the copy. The catalog keys also keep their
  * historical `pages.developer.featurePreviewsTab.*` namespace: renaming seven
- * keys across fourteen catalogs buys no user-visible change, and the section
- * itself still describes the developer-tooling gate it started as.
+ * keys across fourteen catalogs buys no user-visible change.
  *
  * ONE CARD PER FEATURE, and everything that belongs to a feature lives inside
  * its card: the headline, the sentence explaining what state it is in, its
@@ -121,8 +117,8 @@ function crewIntro(): FeaturePreviewIntro {
 
 /**
  * `data-setting-key` anchor on the section wrapper, for
- * `?highlight=key:<this>` — the redirect target of the old Developer-page tab
- * (`DeveloperPage.tsx`). Not a config path and not a registry entry: it only
+ * `?highlight=key:<this>` — what the old `/developer?tab=feature-previews`
+ * link redirects to (`DeveloperPage.tsx`). Not a config path and not a registry entry: it only
  * exists so useSettingHighlight's direct DOM lookup can ring the whole section.
  * Neither the settings extractor (which reads `configKey` props on Settings*
  * primitives) nor the SettingRef call-site guard (which scans `<SettingRef>`)

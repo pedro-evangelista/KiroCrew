@@ -188,7 +188,6 @@
     "cpu": "CPU",
     "cpu_unavailable": "CPU : indisponible",
     "credits": "crédits",
-    "developer": "Développeur",
     "discord_community": "Communauté Discord",
     "disk_unavailable": "Disque : indisponible",
     "dismiss": "Ignorer",
@@ -6655,7 +6654,6 @@
           "knowledge": "Connaissances"
         },
         "pagesProvider": {
-          "developer": "Développeur",
           "kirocrew_agents": "Agents {{productName}}",
           "logs": "Journaux",
           "pages": "Pages",
@@ -10009,7 +10007,6 @@
       "select_confirm_unseen_job": "Cette tâche est déjà ouverte. Appuie sur Suivant pour continuer avec elle, ou choisis d’abord une autre tâche.",
       "select_open_named": "Ouvert en ce moment : « {{name}} ».",
       "gate_setting": "Active d’abord « {{label}} » dans les Réglages. Le guide continue tout seul une fois l’option activée ; il ne change jamais le réglage à ta place.",
-      "gate_developer_mode": "Active d’abord le mode développeur dans les Réglages. Le guide continue tout seul une fois activé.",
       "gate_terminal_enabled": "Le terminal est désactivé sur cette installation. Le guide continue tout seul une fois qu’il est activé.",
       "title_ui_find": "Trouver « {{label}} »",
       "step_ui_find_open": "Ouvre la commande en surbrillance : « {{target}} » se trouve dedans.",
@@ -13855,42 +13852,32 @@
       }
     },
     "developerPage": {
-      "developer": "Développeur",
       "tabs": {
         "archive": {
-          "description": "Historique des sessions après rotation ou compactage (conservation de 7 jours)",
           "label": "Archives"
         },
         "config": {
-          "description": "Configuration de {{productName}} et de l’agent — les modifications sont enregistrées aussitôt",
           "label": "Configuration"
         },
         "debugTools": {
-          "label": "Outils de débogage",
-          "description": "Des surcouches qui montrent, sur l'appareil, ce que l'application se fait à elle-même."
+          "label": "Outils de débogage"
         },
         "logs": {
-          "description": "Visualiseur de journaux en direct avec filtrage par niveau et recherche",
           "label": "Journaux"
         },
         "mcpPool": {
-          "description": "Placer un stub devant les serveurs MCP et partager leurs backends entre sessions",
           "label": "Gestion MCP"
         },
         "memory": {
-          "description": "Graphe de mémoire, fournisseur d’embeddings et rouages du magasin vectoriel",
           "label": "Mémoire"
         },
         "storage": {
-          "description": "Utilisation de localStorage, quotas et ramasse-miettes",
           "label": "Stockage"
         },
         "system": {
-          "description": "Métriques CPU, mémoire, réseau et processus",
           "label": "Système"
         },
         "telemetry": {
-          "description": "Latence de démarrage des sessions (p50/p90) et métriques d’accélération MCP/compétences",
           "label": "Télémétrie"
         }
       }
@@ -17005,15 +16992,12 @@
         "retry": "Réessayer"
       },
       "developerPanel": {
-        "developer_mode": "Mode développeur",
         "developer_tools": "Outils de développement",
         "feature_previews": "Aperçus de fonctionnalités",
         "feature_previews_desc": "Fonctionnalités et pages non publiées. Les pages restent masquées dans la barre latérale et dans Rechercher partout jusqu’à ce que tu les actives ici ; les interrupteurs eux-mêmes apparaissent bien dans la recherche des paramètres. Inachevées à dessein, et valables pour cet appareil uniquement, sauf indication contraire sur une carte.",
         "gateway": "Passerelle",
         "how_to_set_up_an_ssh_tunnel": "Configurer un tunnel SSH",
-        "open_developer_page": "Ouvrir la page Développeur",
         "run_a_local_gateway": "Exécuter une passerelle locale",
-        "show_developer_page_in_sidebar_with_logs_system": "Afficher la page Développeur dans la barre latérale, avec les journaux, les métriques système et les détails internes de la mémoire",
         "turn_it_off_only_when_a_gateway_already_answers": "Démarre une passerelle sur cette machine. Laisse-la activée sauf si le port de cette app atteint déjà une Crew sur une autre machine ; sinon l'app ne pourra pas se connecter à sa prochaine ouverture, moment où ce réglage prend effet. Il faut pour cela que la Crew soit enregistrée pour ce port avec « Set Remote Host… » dans le menu Connection, plus un tunnel : coche « Keep an SSH tunnel to this crew open » à cet endroit (macOS et Linux) ou garde ton propre tunnel SSH actif. Les connexions de Réglages → Crew distante s'arrêtent quand ce réglage est désactivé ; elles ne comptent donc pas."
       },
       "discordPanel": {
@@ -19570,7 +19554,7 @@
         "label": "Utilisation de l'ordinateur"
       },
       "developer": {
-        "description": "Mode développeur, aperçus de fonctionnalités, journaux, métriques système et diagnostics",
+        "description": "Aperçus de fonctionnalités, journaux, métriques système et diagnostics",
         "label": "Développeur"
       },
       "display": {

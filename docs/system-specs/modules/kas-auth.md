@@ -492,7 +492,7 @@ engine instead ([aws-control.md](aws-control.md)).
   with the colon percent-encoded, from `pages/developer/kiroSignInLink.ts`,
   whose `highlight` rings the card through the `useSettingHighlight` hook
   SettingsPage mounts; the card's older home, `/developer?tab=agent-backend`,
-  is forwarded there by DeveloperPage with the `highlight` kept) and from the KAS remedy
+  is forwarded there by the `/developer` redirect with the `highlight` kept) and from the KAS remedy
   strings in `agent_sdk/host_auth.py`. Its intro sentence names the backend
   ("Used only by the Kiro Agent backend") and says Kiro CLI keeps its own
   kiro-cli login, because the card sits under a switch that also lists Kiro
@@ -500,10 +500,9 @@ engine instead ([aws-control.md](aws-control.md)).
   Settings search: a provider chooser on the landing page read as a required
   step to every user, first-run installs included, and Overview carries no
   signpost to it. The
-  switch and card moved from the Developer page (whose sidebar entry is behind
-  Developer Mode) to Settings once first-run setup began offering agents other
-  than Kiro CLI, so a user who set up with one of those can switch agents later
-  without turning on Developer Mode. `KasLoginGate` itself is still not mounted at the app
+  switch and card are a Settings tab of their own because first-run setup
+  offers agents other than Kiro CLI, so a user who set up with one of those can
+  switch agents later. `KasLoginGate` itself is still not mounted at the app
   root; the full-screen form stays available for that.
 - The persistent signal for a lapsed sign-in is the app-level **Kiro sign-in
   notice** (`website/src/components/KiroSignInNotice.tsx`, mounted in `App.tsx`

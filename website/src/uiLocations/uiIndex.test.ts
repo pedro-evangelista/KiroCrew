@@ -808,7 +808,7 @@ describe('ui.show select and gate steps', () => {
     },
     markerSites: [...baseInputs().markerSites, site('chat.picker', 'k.inner', 3)],
     selectionScopes: { session_open: { picker: 'chat.picker', entity: 'session' } },
-    gates: { developer_mode: { setting: 'chat.a-setting' } },
+    gates: { terminal_enabled: { setting: 'chat.a-setting' } },
     ...over,
   })
   const plan = (b: ReturnType<typeof build>) => b.index.locations.find(l => l.id === 'chat.older')?.guide_plan as UiGuidePlan | undefined
@@ -826,18 +826,18 @@ describe('ui.show select and gate steps', () => {
   })
 
   it('a gate condition or a preview flag becomes a leading gate step naming its setting', () => {
-    const b = build(withPicker([{ kind: 'condition', id: 'developer_mode' }, { kind: 'shown_by', location: 'chat.toggle' }]))
+    const b = build(withPicker([{ kind: 'condition', id: 'terminal_enabled' }, { kind: 'shown_by', location: 'chat.toggle' }]))
     expect(b.errors).toEqual([])
-    expect(plan(b)!.placements[0].steps.map(s => s.id)).toEqual(['any:gate:developer_mode', 'any:chat.toggle', 'any:chat.older'])
-    expect(plan(b)!.placements[0].steps[0]).toEqual({ id: 'any:gate:developer_mode', kind: 'gate', gate: 'developer_mode', setting_id: 'chat.a-setting' })
+    expect(plan(b)!.placements[0].steps.map(s => s.id)).toEqual(['any:gate:terminal_enabled', 'any:chat.toggle', 'any:chat.older'])
+    expect(plan(b)!.placements[0].steps[0]).toEqual({ id: 'any:gate:terminal_enabled', kind: 'gate', gate: 'terminal_enabled', setting_id: 'chat.a-setting' })
     const flagged = build(withPicker([], { previewEnablers: { 'mc-preview-x': 'chat.a-setting' } }))
     const raw = flagged.index as unknown as { guide_gates: Record<string, unknown> }
     expect(raw.guide_gates['preview_flag:mc-preview-x']).toEqual({ setting_id: 'chat.a-setting' })
   })
 
   it('refuses a gate on an unknown setting, a picker that is not registered, and an overlap with a predicate', () => {
-    expect(build(withPicker([], { gates: { developer_mode: { setting: 'no.such' } } })).errors)
-      .toContainEqual(expect.stringMatching(/gate 'developer_mode' names unknown setting 'no.such'/))
+    expect(build(withPicker([], { gates: { terminal_enabled: { setting: 'no.such' } } })).errors)
+      .toContainEqual(expect.stringMatching(/gate 'terminal_enabled' names unknown setting 'no.such'/))
     expect(build(withPicker([], { selectionScopes: { session_open: { picker: 'no.picker', entity: 'session' } } })).errors)
       .toContainEqual(expect.stringMatching(/picker 'no.picker' is not a registered location/))
     expect(build(withPicker([], { selectionScopes: { has_open_sessions: { picker: 'chat.picker', entity: 'session' } } })).errors)

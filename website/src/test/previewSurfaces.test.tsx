@@ -15,8 +15,8 @@ import { render, screen, renderHook, act, cleanup, waitFor } from '@testing-libr
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation, useNavigationType } from 'react-router-dom'
 
-// DeveloperPage's tabs are heavy and irrelevant here — the last describe only
-// needs the page's tab rail and its legacy-link redirect.
+// The Developer panel's pages are heavy and irrelevant here — the last
+// describe only needs the old route's redirect.
 vi.mock('../pages/LogsPage', () => ({ LogViewer: () => <div /> }))
 vi.mock('../pages/SystemPage', () => ({ default: () => <div /> }))
 vi.mock('../pages/TelemetryPanel', () => ({ default: () => <div /> }))
@@ -607,55 +607,48 @@ describe('Settings > Developer > Feature Previews', () => {
     expect(localStorage.getItem(PREVIEW_REMOTE_CREW_CHAT)).not.toBe('1')
   })
 
-  it('is gone from the Developer page rail', () => {
-    // Pin the removal, not just the addition: a tab left behind would offer the
-    // same four switches from two places, and the two would drift.
-    render(<MemoryRouter initialEntries={['/developer?tab=config']}><DeveloperPage /></MemoryRouter>)
-    expect(screen.getByTestId('kirocrew-cfg')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /feature previews/i })).toBeNull()
-    expect(screen.queryByRole('switch', { name: /webhooks/i })).toBeNull()
-  })
-
-  it('redirects the old tab link to Settings > Developer with a replace', () => {
-    // `/developer?tab=feature-previews` survives in bookmarks, docs and palette
-    // history. Without the redirect SidePanelLayout would fall back to the
-    // first tab silently — the toggles would look deleted rather than moved.
-    // The probe reads the FINAL location AND the navigation type: a push would
-    // leave the pre-move URL one Back press away.
+  // `/developer?tab=…` survives in bookmarks, docs, curated tips and palette
+  // history. The probe reads the FINAL location AND the navigation type: a push
+  // would leave the pre-move URL one Back press away. Literal URLs on purpose:
+  // this is the contract old links depend on.
+  function redirectOf(from: string): string {
     function LocationProbe() {
       const loc = useLocation()
       const navType = useNavigationType()
       return <div data-testid="loc">{`${navType} ${loc.pathname}${loc.search}`}</div>
     }
     render(
-      <MemoryRouter initialEntries={['/developer?tab=feature-previews']}>
+      <MemoryRouter initialEntries={[from]}>
         <DeveloperPage />
         <LocationProbe />
       </MemoryRouter>,
     )
-    // The destination is the Settings tab that now hosts the cards, ringing
-    // the whole section (its `data-setting-key` anchor) so the reader lands ON
-    // the moved thing — the section, not one of its rows. Literal on purpose:
-    // this is the URL contract old bookmarks and docs depend on.
-    expect(screen.getByTestId('loc').textContent).toBe(
-      `REPLACE /settings/developer?highlight=key%3A${FEATURE_PREVIEWS_HIGHLIGHT_ANCHOR}`,
+    return screen.getByTestId('loc').textContent ?? ''
+  }
+
+  it('redirects the old Feature Previews link to its page, ringing the section', () => {
+    expect(redirectOf('/developer?tab=feature-previews')).toBe(
+      `REPLACE /settings/developer/feature-previews?highlight=key%3A${FEATURE_PREVIEWS_HIGHLIGHT_ANCHOR}`,
     )
   })
 
-  it('leaves every other Developer tab link alone', () => {
-    // The redirect keys on ONE legacy value. A broader match (any unknown tab)
-    // would hijack the page's own unknown-tab fallback, which SidePanelLayout
-    // owns and the queryParamConsumer tests pin.
-    function LocationProbe() {
-      const loc = useLocation()
-      return <div data-testid="loc">{loc.pathname + loc.search}</div>
-    }
-    render(
-      <MemoryRouter initialEntries={['/developer?tab=config']}>
-        <DeveloperPage />
-        <LocationProbe />
-      </MemoryRouter>,
-    )
-    expect(screen.getByTestId('loc').textContent).toBe('/developer?tab=config')
+  it('redirects every other old Developer tab to the same page in Settings', () => {
+    expect(redirectOf('/developer?tab=config')).toBe('REPLACE /settings/developer/config')
+  })
+
+  it('keeps the other query params a page reads', () => {
+    expect(redirectOf('/developer?tab=system&plane=services')).toBe('REPLACE /settings/developer/system?plane=services')
+  })
+
+  it('redirects a trailing-slash path the route also matches', () => {
+    expect(redirectOf('/developer/?tab=system')).toBe('REPLACE /settings/developer/system')
+  })
+
+  it('redirects a mixed-case path the route also matches', () => {
+    expect(redirectOf('/Developer?tab=config')).toBe('REPLACE /settings/developer/config')
+  })
+
+  it('sends an unknown or absent tab to the Developer tab itself', () => {
+    expect(redirectOf('/developer?tab=nope')).toBe('REPLACE /settings/developer')
   })
 })

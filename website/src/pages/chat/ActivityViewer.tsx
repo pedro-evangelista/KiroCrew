@@ -31,7 +31,7 @@ import ErrorBoundary from '../../components/ErrorBoundary'
 // The crew log is a drill-in: six fold sections, their own i18n copy and the table
 // that draws each one, on a tab most sessions never open. Fetched on first open
 // rather than riding in the dashboard shell, the same shape `CapabilitiesPage` uses
-// for its templates tab and `DeveloperPage` for the memory graph.
+// for its templates tab and `DeveloperPanel` for the memory graph.
 const CrewLogTab = lazy(() => import('./CrewLogPanel').then(m => ({ default: m.CrewLogTab })))
 import SessionSummaryTab from './SessionSummaryTab'
 import { i18nT } from '../../i18n/t'

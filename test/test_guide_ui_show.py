@@ -391,7 +391,7 @@ def test_the_browser_module_and_the_index_carry_one_build_digest() -> None:
         | frozenset(raw["guide_gates"])
     )
     assert manifest.selections == frozenset(raw["guide_selections"])
-    assert manifest.gates["developer_mode"] == "developer.developer-mode"
+    assert manifest.gates["preview_flag:mc-preview-crew"] == "developer.mates"
     assert manifest.gates["terminal_enabled"] is None
     assert manifest.plan_predicates["chat.older-sessions"] == (
         "full_dashboard",

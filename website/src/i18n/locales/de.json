@@ -178,7 +178,6 @@
     "cpu": "CPU",
     "cpu_unavailable": "CPU: nicht verfügbar",
     "credits": "Credits",
-    "developer": "Entwickler",
     "discord_community": "Discord-Community",
     "disk_unavailable": "Festplatte: nicht verfügbar",
     "dismiss": "Schließen",
@@ -6542,7 +6541,6 @@
           "knowledge": "Wissen"
         },
         "pagesProvider": {
-          "developer": "Entwickler",
           "kirocrew_agents": "{{productName}}-Agenten",
           "logs": "Protokolle",
           "pages": "Seiten",
@@ -9865,7 +9863,6 @@
       "select_confirm_unseen_job": "Dieser Job ist schon geöffnet. Drück auf „Weiter“, um mit ihm fortzufahren, oder wähle vorher einen anderen Job.",
       "select_open_named": "Gerade geöffnet: „{{name}}“.",
       "gate_setting": "Schalte zuerst „{{label}}“ in den Einstellungen ein. Danach geht die Anleitung von selbst weiter; sie ändert die Einstellung nie für dich.",
-      "gate_developer_mode": "Schalte zuerst den Entwicklermodus in den Einstellungen ein. Danach geht die Anleitung von selbst weiter.",
       "gate_terminal_enabled": "Das Terminal ist in dieser Installation ausgeschaltet. Sobald es eingeschaltet ist, geht die Anleitung von selbst weiter.",
       "title_ui_find": "„{{label}}“ finden",
       "step_ui_find_open": "Öffne das hervorgehobene Element: „{{target}}“ ist darin.",
@@ -13635,42 +13632,32 @@
       }
     },
     "developerPage": {
-      "developer": "Entwickler",
       "tabs": {
         "archive": {
-          "description": "Rotierter/verdichteter Sitzungsverlauf (7 Tage Aufbewahrung)",
           "label": "Archiv"
         },
         "config": {
-          "description": "{{productName}}- und Agent-Konfiguration – Änderungen werden sofort gespeichert",
           "label": "Konfiguration"
         },
         "debugTools": {
-          "label": "Debug-Werkzeuge",
-          "description": "Overlays, die auf dem Gerät zeigen, was die App mit sich selbst macht."
+          "label": "Debug-Werkzeuge"
         },
         "logs": {
-          "description": "Live-Protokollansicht mit Ebenenfilter und Suche",
           "label": "Protokolle"
         },
         "mcpPool": {
-          "description": "MCP-Server mit einem Stub versehen und ihre Backends zwischen Sitzungen teilen",
           "label": "MCP-Verwaltung"
         },
         "memory": {
-          "description": "Erinnerungsgraph, Embedding-Anbieter und Interna des Vektorspeichers",
           "label": "Erinnerung"
         },
         "storage": {
-          "description": "localStorage-Nutzung, Kontingente und Speicherbereinigung",
           "label": "Speicher"
         },
         "system": {
-          "description": "Metriken zu CPU, Speicher, Netzwerk und Prozessen",
           "label": "System"
         },
         "telemetry": {
-          "description": "Startlatenz von Sitzungen (p50/p90) und Beschleunigungsmetriken für MCP/Skills",
           "label": "Telemetrie"
         }
       }
@@ -16731,15 +16718,12 @@
         "retry": "Erneut versuchen"
       },
       "developerPanel": {
-        "developer_mode": "Entwicklermodus",
         "developer_tools": "Entwicklerwerkzeuge",
         "feature_previews": "Funktionsvorschauen",
         "feature_previews_desc": "Nicht veröffentlichte Funktionen und Seiten. Die Seiten erscheinen weder in der Seitenleiste noch in „Überall suchen“, bis du sie hier aktivierst; die Schalter selbst findet die Einstellungssuche aber. Sie sind absichtlich unfertig und gelten nur für dieses Gerät, sofern eine Karte nichts anderes sagt.",
         "gateway": "Gateway",
         "how_to_set_up_an_ssh_tunnel": "So richtest du einen SSH-Tunnel ein",
-        "open_developer_page": "Entwicklerseite öffnen",
         "run_a_local_gateway": "Lokales Gateway ausführen",
-        "show_developer_page_in_sidebar_with_logs_system": "Entwicklerseite in der Seitenleiste mit Protokollen, Systemmetriken und Erinnerungsinterna anzeigen",
         "turn_it_off_only_when_a_gateway_already_answers": "Startet ein Gateway auf diesem Rechner. Lass es an, außer der Port dieser App erreicht bereits eine Crew auf einem anderen Rechner – sonst kann die App beim nächsten Öffnen, wenn dies wirksam wird, keine Verbindung herstellen. Dazu muss die Crew für diesen Port mit „Set Remote Host…“ im Menü Connection gespeichert sein, plus ein Tunnel: kreuz dort „Keep an SSH tunnel to this crew open“ an (macOS und Linux) oder lass einen eigenen SSH-Tunnel laufen. Verbindungen unter Einstellungen → Remote-Crew enden, wenn dies aus ist, und zählen daher nicht."
       },
       "discordPanel": {
@@ -19273,7 +19257,7 @@
         "label": "Computer-Nutzung"
       },
       "developer": {
-        "description": "Entwicklermodus, Funktionsvorschauen, Protokolle, Systemmetriken und Diagnose",
+        "description": "Funktionsvorschauen, Protokolle, Systemmetriken und Diagnose",
         "label": "Entwickler"
       },
       "display": {

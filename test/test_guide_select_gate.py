@@ -79,12 +79,12 @@ def test_a_path_that_differs_by_viewport_is_planned_once_per_viewport() -> None:
 
 
 def test_a_gate_step_leads_and_names_the_setting_that_turns_it_on() -> None:
-    plan = _plan("shell.developer")
+    plan = _plan("members.add-menu")
     gate = {
-        "id": "desktop:gate:developer_mode",
+        "id": "desktop:gate:preview_flag:mc-preview-crew",
         "kind": "gate",
-        "gate": "developer_mode",
-        "setting_id": "developer.developer-mode",
+        "gate": "preview_flag:mc-preview-crew",
+        "setting_id": "developer.mates",
     }
     assert plan["desktop"][0] == gate
     assert plan["mobile"][0]["kind"] == "gate" and "location" not in plan["mobile"][0]
@@ -107,18 +107,18 @@ def test_the_index_declares_the_selection_and_gate_vocabularies() -> None:
 
 def test_a_validated_record_keeps_only_plan_ids_for_its_select_and_gate_steps() -> None:
     (record,) = guide_catalog.validate_actions(
-        [{"id": "ui.show", "params": {"location_id": "shell.developer"}}]
+        [{"id": "ui.show", "params": {"location_id": "members.add-menu"}}]
     )
     assert record["step_meta"] == {
-        "desktop:gate:developer_mode": {
+        "desktop:gate:preview_flag:mc-preview-crew": {
             "kind": "gate",
-            "gate": "developer_mode",
-            "setting_id": "developer.developer-mode",
+            "gate": "preview_flag:mc-preview-crew",
+            "setting_id": "developer.mates",
         },
-        "mobile:gate:developer_mode": {
+        "mobile:gate:preview_flag:mc-preview-crew": {
             "kind": "gate",
-            "gate": "developer_mode",
-            "setting_id": "developer.developer-mode",
+            "gate": "preview_flag:mc-preview-crew",
+            "setting_id": "developer.mates",
         },
     }
 
@@ -126,7 +126,7 @@ def test_a_validated_record_keeps_only_plan_ids_for_its_select_and_gate_steps() 
 @pytest.mark.parametrize(
     "step",
     [
-        {"id": "a:gate:x", "kind": "gate", "gate": "x", "location": "shell.developer"},
+        {"id": "a:gate:x", "kind": "gate", "gate": "x", "location": "members.add-menu"},
         {"id": "a:select:x", "kind": "select", "location": "members.roster-list"},
         {"id": "a:x", "kind": "click", "location": "members.edit"},
         {"id": "a:gate:x", "kind": "gate", "gate": "x", "setting_id": 3},
@@ -187,14 +187,14 @@ def _report(store: GuideStore, g: dict[str, Any], **over: Any) -> dict[str, Any]
 
 def test_a_gate_that_is_off_pauses_the_guide_naming_its_setting_and_resumes_in_place() -> None:
     store = _store()
-    g = _claimed(store, "shell.developer", "desktop")
+    g = _claimed(store, "members.add-menu", "desktop")
     assert g["blocker"] is None
     g = _report(store, g, outcome="target_missing", detail="gate_off")
     assert (g["status"], g["reason"], g["step_index"]) == ("target_missing", "gate_off", 0)
     assert g["blocker"] == {
         "kind": "gate_off",
-        "gate": "developer_mode",
-        "setting_id": "developer.developer-mode",
+        "gate": "preview_flag:mc-preview-crew",
+        "setting_id": "developer.mates",
     }
     # The person turned it on: the same step comes back, then passes.
     g = _report(store, g, outcome="target_found")
@@ -220,7 +220,7 @@ def test_an_empty_picker_is_needs_selection_and_names_only_the_selection() -> No
         ("chat.older-sessions", "desktop", "selection_empty"),
         # A select step is not a gate, a gate step not a picker.
         ("schedule.pause", "any", "gate_off"),
-        ("shell.developer", "desktop", "selection_empty"),
+        ("members.add-menu", "desktop", "selection_empty"),
     ],
 )
 def test_a_blocker_is_reported_only_by_the_step_that_waits_on_it(
@@ -268,7 +268,7 @@ def _replan(store: GuideStore, g: dict[str, Any], placement: str, **over: Any) -
 
 def test_a_replan_at_a_shared_step_boundary_walks_the_new_placement_from_there() -> None:
     store = _store()
-    g = _claimed(store, "shell.developer", "desktop")
+    g = _claimed(store, "members.add-menu", "desktop")
     g = _report(store, g)  # the gate is on: step 1 is next
     g = _report(store, g, outcome="target_missing")  # the rail row left with the resize
     before = g["revision"]
@@ -335,20 +335,20 @@ def test_a_replan_of_a_fixed_action_is_refused() -> None:
 
 
 def test_find_ui_says_gate_off_before_any_other_blocker() -> None:
-    gates = {"developer_mode": "developer.developer-mode"}
+    gates = {"preview_flag:mc-preview-crew": "developer.mates"}
     blocker = mcp_guide._blocker_for(
         "unmounted",
         ("menu:shell.mobile-menu",),
-        ("developer_mode", "not_on_sessions_page"),
+        ("preview_flag:mc-preview-crew", "not_on_sessions_page"),
         {"menu:shell.mobile-menu": "closed"},
-        {"developer_mode": "unmet", "not_on_sessions_page": "unmet"},
+        {"preview_flag:mc-preview-crew": "unmet", "not_on_sessions_page": "unmet"},
         gates,
         frozenset(),
     )
     assert blocker == {
         "kind": "gate_off",
-        "gate": "developer_mode",
-        "setting_id": "developer.developer-mode",
+        "gate": "preview_flag:mc-preview-crew",
+        "setting_id": "developer.mates",
     }
 
 
@@ -384,5 +384,5 @@ def test_find_ui_reports_no_selection_blocker_once_it_is_made_or_unknown() -> No
 def test_the_manifest_asks_a_tab_for_a_plans_selections_and_gates() -> None:
     manifest = guide_catalog.ui_build_manifest()
     assert "crewmate_selected" in manifest.plan_predicates["members.edit"]
-    assert "developer_mode" in manifest.plan_predicates["shell.developer"]
-    assert manifest.gates["developer_mode"] == "developer.developer-mode"
+    assert "preview_flag:mc-preview-crew" in manifest.plan_predicates["members.add-menu"]
+    assert manifest.gates["preview_flag:mc-preview-crew"] == "developer.mates"

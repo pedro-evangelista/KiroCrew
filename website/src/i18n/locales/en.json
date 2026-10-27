@@ -7,7 +7,6 @@
     "close": "Close",
     "cpu": "CPU",
     "credits": "credits",
-    "developer": "Developer",
     "discord_community": "Discord community",
     "dismiss": "Dismiss",
     "dsk": "DSK",
@@ -7467,9 +7466,6 @@
         "open_artifact_deploy": "Open Artifact Deploy"
       }
     },
-    "developerPage": {
-      "developer": "Developer"
-    },
     "embedSettingsPage": {
       "back": "Back",
       "settings": "Settings"
@@ -9474,13 +9470,10 @@
         "show_cursor_motion": "Show cursor motion"
       },
       "developerPanel": {
-        "developer_mode": "Developer Mode",
         "developer_tools": "Developer Tools",
         "gateway": "Gateway",
         "how_to_set_up_an_ssh_tunnel": "How to set up an SSH tunnel",
-        "open_developer_page": "Open Developer page",
         "run_a_local_gateway": "Run a local gateway",
-        "show_developer_page_in_sidebar_with_logs_system": "Show Developer page in sidebar with Logs, System metrics, and Memory internals",
         "turn_it_off_only_when_a_gateway_already_answers": "Start a gateway on this machine. Leave it on unless this app's port already reaches a crew on another machine, or the app cannot connect the next time it opens, which is when this takes effect. That needs the crew saved for this port with “Set Remote Host…” in the Connection menu, plus a tunnel: tick “Keep an SSH tunnel to this crew open” there (macOS and Linux) or keep your own SSH tunnel running. Settings → Remote Crew connections stop when this is off, so they do not count."
       },
       "displayPanel": {

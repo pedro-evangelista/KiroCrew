@@ -4,9 +4,8 @@
  *
  * The label and description catalog keys (`NEW_MENU_LABEL_KEY`,
  * `NEW_MENU_DESC_KEY`), the three row groups (`NEW_MENU_GROUPS`), the
- * Developer Mode gate (`DEV_ONLY_VIEWS`), `newMenuSections` (the groups after
- * every gate: Terminal, Developer Mode, Summary, the host's withdrawals and the
- * pinned views) with the `SidePanelWithholdable` type a host withdraws with,
+ * `newMenuSections` (the groups after every gate: Terminal, Summary, the
+ * host's withdrawals and the pinned views) with the `SidePanelWithholdable` type a host withdraws with,
  * and the shared menu row `AddMenuItem`. `SidePanel.tsx` renders the menu and
  * the empty-state launcher from these and re-exports the public names, which
  * callers import from there. This module never imports `SidePanel.tsx`.
@@ -147,20 +146,9 @@ const AddMenuItem = forwardRef<ElementRef<typeof DropdownMenuItem>, ComponentPro
   },
 )
 
-/** Views behind the Developer Mode consent gate (Settings > Developer) — the
- *  same gate the standalone Developer page uses. All three are raw
- *  instrumentation of the agent's own execution (the session's tool-call log,
- *  the context window's composition, and the folds over the session's crew log)
- *  rather than anything the session produced, so none belongs in a
- *  non-developer's menu. Gating all of them empties the diagnostics group
- *  outright when Developer Mode is off — which is exactly the empty-group case
- *  `newMenuSections` drops. */
-const DEV_ONLY_VIEWS = new Set<ViewKind | 'terminal'>(['logs', 'context', 'crewlog'])
-
 /** Which `+`-menu entries are offered, given the gates that hide entries:
- *  Terminal is hidden when the feature is disabled server-side, the
- *  diagnostics views (Logs, Context breakdown) are hidden unless Developer
- *  Mode is on, and **Summary is hidden while session summaries are disabled**.
+ *  Terminal is hidden when the feature is disabled server-side, and
+ *  **Summary is hidden while session summaries are disabled**.
  *  The permanently pinned views (Changes / Files / Artifacts) are never listed;
  *  they are always present in the strip.
  *
@@ -171,9 +159,9 @@ const DEV_ONLY_VIEWS = new Set<ViewKind | 'terminal'>(['logs', 'context', 'crewl
  *  rather than wording around it, and it reverses itself the moment the flag
  *  flips.
  *
- *  Grouped, and **emptied groups are dropped**: with Developer Mode off the
- *  whole diagnostics group disappears, and Terminal disabled shrinks Workspaces
- *  to two rows. A group that filtered down to nothing would otherwise render
+ *  Grouped, and **emptied groups are dropped**: Terminal disabled shrinks
+ *  Workspaces to two rows, and a host that withholds every row of a group
+ *  removes the group. A group that filtered down to nothing would otherwise render
  *  as a separator with no rows after it.
  *
  *  `hiddenViews` is the HOST's withdrawal: views whose data this host cannot
@@ -183,14 +171,13 @@ const DEV_ONLY_VIEWS = new Set<ViewKind | 'terminal'>(['logs', 'context', 'crewl
  *  bucket would be orphaned by the re-key). Withheld here and from the pinned
  *  block alike — an empty view is worse than no view. */
 export function newMenuSections(
-  opts: { devMode: boolean; terminalEnabled: boolean; summaryEnabled: boolean; hiddenViews?: ReadonlySet<SidePanelWithholdable> },
+  opts: { terminalEnabled: boolean; summaryEnabled: boolean; hiddenViews?: ReadonlySet<SidePanelWithholdable> },
 ): { id: string; items: { kind: ViewKind | 'terminal'; icon: ReactNode }[] }[] {
   return NEW_MENU_GROUPS
     .map(group => ({
       id: group.id,
       items: group.items.filter(item =>
         (opts.terminalEnabled || item.kind !== 'terminal')
-        && (opts.devMode || !DEV_ONLY_VIEWS.has(item.kind))
         && (opts.summaryEnabled || item.kind !== 'summary')
         && !opts.hiddenViews?.has(item.kind)
         && !(PINNED_VIEWS as string[]).includes(item.kind),

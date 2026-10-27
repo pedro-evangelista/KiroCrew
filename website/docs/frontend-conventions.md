@@ -319,8 +319,8 @@ navigation rail apart from a filter pill, and the System page stacks both.
 ### The About, Chat and MCP settings panels
 
 `pages/settings/AboutPanel.tsx` (Settings ▸ About), `pages/settings/ChatPanel.tsx`
-(Settings ▸ Chat) and `pages/settings/McpManagement.tsx` (the Developer page's MCP
-pool) are facades over sibling owners in `pages/settings/`. Each facade keeps its
+(Settings ▸ Chat) and `pages/settings/McpManagement.tsx` (Settings ▸ Developer ▸
+MCP Management) are facades over sibling owners in `pages/settings/`. Each facade keeps its
 module id and every export, so hosts and the specs that mock a panel keep naming the
 facade. Nothing outside a panel's own files imports one of its owners, and no owner
 imports its facade; the only edges between owners are `AboutPanelGatewayUpdate.tsx` to

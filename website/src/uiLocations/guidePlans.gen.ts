@@ -3,7 +3,7 @@
 import type { UiGuidePlan } from './types'
 
 /** The `build_digest` of the packaged index this bundle was built with (see `guideBuildDigest`). */
-export const GUIDE_BUILD_DIGEST = "sha256:843d87650280081db1e886b0625cf2cb48d2cfa8e37d06969a4bf4a590e093d2"
+export const GUIDE_BUILD_DIGEST = "sha256:a9e85984e81e6078530094576561ffeb9c51b24bf0313ea2e225ef4a0a64e4a4"
 
 /** Curated location ids: the only ids a live observation may name. */
 export const GUIDE_OBSERVABLE_IDS: readonly string[] = [
@@ -132,7 +132,6 @@ export const GUIDE_OBSERVABLE_IDS: readonly string[] = [
   "sessions.row-menu.rename",
   "sessions.show-all-older",
   "shell.connect-phone",
-  "shell.developer",
   "shell.focus-mode",
   "shell.kiro-account",
   "shell.menu-search",
@@ -3195,57 +3194,6 @@ export const GUIDE_PLANS: Readonly<Record<string, UiGuidePlan>> = {
             "requires": [
               "phone_connect_available"
             ]
-          }
-        ]
-      }
-    ]
-  },
-  "shell.developer": {
-    "version": 2,
-    "label_key": "app.developer",
-    "placements": [
-      {
-        "id": "desktop",
-        "route": null,
-        "viewport": "desktop",
-        "steps": [
-          {
-            "id": "desktop:gate:developer_mode",
-            "kind": "gate",
-            "gate": "developer_mode",
-            "setting_id": "developer.developer-mode"
-          },
-          {
-            "id": "desktop:shell.developer",
-            "location": "shell.developer",
-            "label_key": "app.developer"
-          }
-        ]
-      },
-      {
-        "id": "mobile",
-        "route": null,
-        "viewport": "mobile",
-        "steps": [
-          {
-            "id": "mobile:gate:developer_mode",
-            "kind": "gate",
-            "gate": "developer_mode",
-            "setting_id": "developer.developer-mode"
-          },
-          {
-            "id": "mobile:shell.mobile-menu",
-            "location": "shell.mobile-menu",
-            "label_key": "app.open_menu",
-            "scope": "menu:shell.mobile-menu",
-            "requires": [
-              "not_on_sessions_page"
-            ]
-          },
-          {
-            "id": "mobile:shell.developer",
-            "location": "shell.developer",
-            "label_key": "app.developer"
           }
         ]
       }

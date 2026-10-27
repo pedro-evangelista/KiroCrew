@@ -257,7 +257,7 @@ row, so it names the row with the `{attempt_suffix}` placeholder instead:
 it hands the model (`scenarios.attempt_suffix`). Without it the retry is refused as a
 duplicate, and the refused form stays open and dirty, so the next scenario's first
 navigation lands on the browser's "Leave site?" prompt over that form. The same boot also serves every LATER scenario in the run, through one browser
-profile, so a per-device switch (Developer Mode, Show Timestamps, a feature preview)
+profile, so a per-device switch (Show Timestamps, a feature preview)
 that a scenario flips is still flipped when the next scenario starts. A scenario that
 flips one either puts it back before it ends or leaves a state nothing later depends on
 (the members scenarios leave the Mates preview on), and it words each switch step

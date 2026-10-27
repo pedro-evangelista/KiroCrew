@@ -168,7 +168,6 @@
     "cpu": "CPU",
     "cpu_unavailable": "CPU: 利用不可",
     "credits": "クレジット",
-    "developer": "開発者",
     "discord_community": "Discord コミュニティ",
     "disk_unavailable": "ディスク: 利用不可",
     "dismiss": "閉じる",
@@ -6429,7 +6428,6 @@
           "knowledge": "知識"
         },
         "pagesProvider": {
-          "developer": "デベロッパー",
           "kirocrew_agents": "{{productName}} エージェント",
           "logs": "ログ",
           "pages": "ページ",
@@ -9721,7 +9719,6 @@
       "select_confirm_unseen_job": "このジョブはすでに開いています。「次へ」で続けるか、先に別のジョブを選んでください。",
       "select_open_named": "今開いているのは「{{name}}」です。",
       "gate_setting": "まず設定で「{{label}}」をオンにしてください。オンになるとガイドは自動で続きます。ガイドが設定を代わりに変えることはありません。",
-      "gate_developer_mode": "まず設定で開発者モードをオンにしてください。オンになるとガイドは自動で続きます。",
       "gate_terminal_enabled": "このインストールではターミナルがオフになっています。オンになるとガイドは自動で続きます。",
       "title_ui_find": "「{{label}}」を探す",
       "step_ui_find_open": "ハイライトされたコントロールを開いてください。「{{target}}」はその中にあります。",
@@ -13415,42 +13412,32 @@
       }
     },
     "developerPage": {
-      "developer": "デベロッパー",
       "tabs": {
         "archive": {
-          "description": "ローテーション/圧縮済みセッション履歴（7 日間保持）",
           "label": "アーカイブ"
         },
         "config": {
-          "description": "{{productName}} とエージェントの設定 — 変更はすぐ保存されます",
           "label": "設定"
         },
         "debugTools": {
-          "label": "デバッグツール",
-          "description": "アプリ内部の挙動を実機上でそのまま可視化するオーバーレイ。"
+          "label": "デバッグツール"
         },
         "logs": {
-          "description": "レベルフィルタリング検索機能付きライブログビューア",
           "label": "ログ"
         },
         "mcpPool": {
-          "description": "MCP サーバーにスタブを置き、バックエンドをセッション間で共有します",
           "label": "MCP 管理"
         },
         "memory": {
-          "description": "メモリグラフ、埋め込みプロバイダー、ベクトルストア内部情報",
           "label": "メモリ"
         },
         "storage": {
-          "description": "localStorage 使用量、クォータ、ガベージコレクション",
           "label": "ストレージ"
         },
         "system": {
-          "description": "CPU、メモリ、ネットワーク、プロセスメトリクス",
           "label": "システム"
         },
         "telemetry": {
-          "description": "クレジット支出、コンテキストコスト、セッション起動レイテンシー",
           "label": "テレメトリー"
         }
       }
@@ -16457,15 +16444,12 @@
         "retry": "再試行"
       },
       "developerPanel": {
-        "developer_mode": "開発者モード",
         "developer_tools": "開発者ツール",
         "feature_previews": "機能プレビュー",
         "feature_previews_desc": "未リリースの機能とページです。ここでオンにするまで、ページ自体はサイドバーと「すべてから検索」には表示されませんが、下のスイッチは設定の検索で見つかります。内容は意図的に未完成のままです。カードに別の記載がない限り、設定はこのデバイスのみに適用されます。",
         "gateway": "ゲートウェイ",
         "how_to_set_up_an_ssh_tunnel": "SSH トンネルの設定方法",
-        "open_developer_page": "開発者ページを開く",
         "run_a_local_gateway": "ローカルゲートウェイを実行する",
-        "show_developer_page_in_sidebar_with_logs_system": "サイドバーに開発者ページを表示（ログ、システムメトリクス、メモリ内部情報を含む）",
         "turn_it_off_only_when_a_gateway_already_answers": "このマシンでゲートウェイを起動します。このアプリのポートがすでに別のマシンのクルーにつながっている場合を除き、オンのままにしてください。そうでないと、次回アプリを開いたとき（この設定が反映されるとき）に接続できません。そのためには、Connection メニューの「Set Remote Host…」でこのポートのクルーを保存し、さらにトンネルが必要です：そこで「Keep an SSH tunnel to this crew open」にチェックを入れる（macOS と Linux）か、ご自身の SSH トンネルを維持してください。これがオフのときは 設定 → リモートクルー の接続は止まるため、条件を満たしません。"
       },
       "discordPanel": {
@@ -18976,7 +18960,7 @@
         "label": "コンピューター使用"
       },
       "developer": {
-        "description": "デベロッパーモード、機能プレビュー、ログ、システムメトリクス、および診断",
+        "description": "機能プレビュー、ログ、システムメトリクス、および診断",
         "label": "デベロッパー"
       },
       "display": {

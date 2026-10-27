@@ -112,7 +112,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
       if (cursorAwaySubscribers === 0) ipcRenderer.send("focus-mode-watch-cursor", false);
     };
   },
-  // Dev mode IPC: renderer signals main process to show/hide DevTools menu item.
+  // Renderer signals main process to show/hide the DevTools menu item.
   setDevMode: (enabled) => ipcRenderer.send("dev-mode-changed", !!enabled),
   // Windows custom titlebar: menu surfaces render in the dashboard so hover
   // can switch between them; command execution stays in the main process.

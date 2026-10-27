@@ -2247,7 +2247,6 @@
           "knowledge": "Knowledge"
         },
         "pagesProvider": {
-          "developer": "Developer",
           "kirocrew_agents": "{{productName}} Agents",
           "logs": "Logs",
           "pages": "Pages",
@@ -4088,7 +4087,6 @@
       "select_confirm_unseen_job": "This job is already open. Press Next to go on with it, or pick a different job first.",
       "select_open_named": "Open now: “{{name}}”.",
       "gate_setting": "Turn on “{{label}}” in Settings first. The guide goes on by itself once it’s on; it never changes the setting for you.",
-      "gate_developer_mode": "Turn on developer mode in Settings first. The guide goes on by itself once it’s on.",
       "gate_terminal_enabled": "The terminal is turned off on this installation. The guide goes on by itself once it’s on.",
       "title_ui_find": "Find “{{label}}”",
       "step_ui_find_open": "Open the highlighted control: “{{target}}” is inside.",
@@ -6314,39 +6312,30 @@
     "developerPage": {
       "tabs": {
         "archive": {
-          "description": "Rotated/compacted session history (7-day retention)",
           "label": "Archive"
         },
         "config": {
-          "description": "{{productName}} and agent configuration — edits save on change",
           "label": "Config"
         },
         "debugTools": {
-          "label": "Debug tools",
-          "description": "Overlays that report what the app is doing to itself, on the device where it happens."
+          "label": "Debug tools"
         },
         "logs": {
-          "description": "Live log viewer with level filtering and search",
           "label": "Logs"
         },
         "mcpPool": {
-          "description": "Stub MCP servers and share their backends across sessions",
           "label": "MCP Management"
         },
         "memory": {
-          "description": "Memory graph, embedding provider, and vector store internals",
           "label": "Memory"
         },
         "storage": {
-          "description": "localStorage usage, quotas, and garbage collection",
           "label": "Storage"
         },
         "system": {
-          "description": "CPU, memory, network, and process metrics",
           "label": "System"
         },
         "telemetry": {
-          "description": "Credit spend, context cost, and session startup latency",
           "label": "Telemetry"
         }
       }
@@ -9191,7 +9180,7 @@
         "label": "Computer Use"
       },
       "developer": {
-        "description": "Developer mode, feature previews, logs, system metrics, and diagnostics",
+        "description": "Feature previews, logs, system metrics, and diagnostics",
         "label": "Developer"
       },
       "display": {

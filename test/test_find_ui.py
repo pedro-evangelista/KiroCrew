@@ -1118,16 +1118,16 @@ def test_find_setting_rows_carry_the_dashboard_label() -> None:
     from kiro_crew.dashboard.change_cards import localize_setting_rows
 
     rows = [
-        {"setting_id": "developer.developer-mode", "label": "Developer Mode"},
+        {"setting_id": "developer.mates", "label": "Mates"},
         {"setting_id": "not.a-setting", "label": "Kept"},
     ]
-    shown = ui_index.setting_labels(["developer.developer-mode"], "zh-CN")
+    shown = ui_index.setting_labels(["developer.mates"], "zh-CN")
     out = localize_setting_rows(rows, "zh-CN")
-    assert out[0]["label"] == shown["developer.developer-mode"]["label"] != "Developer Mode"
-    assert out[0]["path"] == shown["developer.developer-mode"]["path"]
+    assert out[0]["label"] == shown["developer.mates"]["label"] != "Mates"
+    assert out[0]["path"] == shown["developer.mates"]["path"]
     assert out[0]["label_locale"] == "zh-CN"
     assert out[1] == rows[1]
-    assert localize_setting_rows(rows, "")[0]["label"] == "Developer Mode"
+    assert localize_setting_rows(rows, "")[0]["label"] == "Mates"
 
 
 # ── where-is questions whose first answer must carry a guide ──

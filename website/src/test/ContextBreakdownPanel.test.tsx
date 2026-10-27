@@ -617,22 +617,16 @@ describe('placement: a per-session tab, not a global page', () => {
     expect(NEW_MENU_DESC_KEY.context).toBeTruthy()
   }, SIDE_PANEL_IMPORT_TIMEOUT_MS)
 
-  it('is hidden from the + menu unless Developer Mode is on', async () => {
+  it('is offered in the + menu right after Logs, whatever Terminal is doing', async () => {
     const { newMenuSections } = await import('../pages/chat/SidePanel')
-    const kinds = (o: { devMode: boolean; terminalEnabled: boolean }) =>
+    const kinds = (o: { terminalEnabled: boolean }) =>
       newMenuSections({ ...o, summaryEnabled: true }).flatMap(g => g.items).map(i => i.kind)
-    // Dev mode off: Context breakdown is not offered — it is a developer surface.
-    expect(kinds({ devMode: false, terminalEnabled: true })).not.toContain('context')
-    // Dev mode on: it appears (right after Logs, closing the diagnostics group).
-    const on = kinds({ devMode: true, terminalEnabled: true })
-    expect(on).toContain('context')
-    expect(on.indexOf('context')).toBe(on.indexOf('logs') + 1)
-    // The gate is independent of the Terminal gate, and it covers Logs as
-    // well: both diagnostics views are Developer-Mode-only, so with dev mode off
-    // neither is offered no matter what Terminal is doing.
-    expect(kinds({ devMode: false, terminalEnabled: false })).not.toContain('logs')
-    expect(kinds({ devMode: true, terminalEnabled: false })).toContain('logs')
-    expect(kinds({ devMode: false, terminalEnabled: false })).not.toContain('terminal')
+    for (const terminalEnabled of [false, true]) {
+      const offered = kinds({ terminalEnabled })
+      expect(offered).toContain('logs')
+      expect(offered.indexOf('context')).toBe(offered.indexOf('logs') + 1)
+    }
+    expect(kinds({ terminalEnabled: false })).not.toContain('terminal')
   }, SIDE_PANEL_IMPORT_TIMEOUT_MS)
 
   it('carries no session picker — the tab IS the session', () => {

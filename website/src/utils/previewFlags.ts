@@ -12,7 +12,7 @@
  * Deliberately localStorage, not backend config: this is a per-device "show me
  * the unfinished thing" switch with no server behavior attached (the surface's
  * own API is unaffected either way), which is exactly the shape of the existing
- * Developer Mode gate (`mc-dev-mode`). Putting it in `config.json` would imply
+ * other per-device switches in localStorage. Putting it in `config.json` would imply
  * a fleet-wide setting and a backend contract that does not exist.
  *
  * Retiring a flag is the goal, not an afterthought: when the surface is
@@ -31,8 +31,7 @@ import { safeGetItem, safeSetItem } from './safeStorage'
  * Fired on the window whenever a preview flag changes, so the nav rail updates
  * in the same tick as the toggle instead of waiting for a reload.
  *
- * Mirrors `mc-dev-mode-changed`. One event for all flags (the `detail` names
- * which one) rather than one event per flag, so adding a flag stays a data
+ * One event for all flags (the `detail` names which one) rather than one event per flag, so adding a flag stays a data
  * change.
  */
 export const PREVIEW_FLAG_EVENT = 'mc-preview-flag-changed'

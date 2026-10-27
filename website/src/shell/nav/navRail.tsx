@@ -2,7 +2,7 @@ import { surfaceLabel } from '../../surfaces/registry'
 import { SortableAppNavRow, NavToggle } from './appRail'
 import { railWidthFor } from '../../hooks/useRailWidth'
 import { FOCUS_INSET } from '../../hooks/useFocusMode'
-import { Code, Coins, Compass, LayoutGrid, SquareTerminal, Smartphone, Search as SearchIcon } from 'lucide-react'
+import { Coins, Compass, LayoutGrid, SquareTerminal, Smartphone, Search as SearchIcon } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { DndContext, closestCenter, DragOverlay } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -32,7 +32,7 @@ export function ShellNavRail({ shell }: { shell: AppShell }) {
     mobileNavScrimRef, mobileNavScrim, closeMobileNavDrawer, advertisedNavItems, sortedAppGroup,
     activeAppDragId, appDndSensors, handleAppDragStart, handleAppDragEnd, handleAppDragCancel, APPS_NAV_LIMIT,
     appsExpanded, toggleAppsExpanded, slotOwners, appBadges, discoverBadges, railAppBadges, railAppRunStates,
-    commandPalette, kiroUsageOpen, setKiroUsageOpen, kiroAccountEntry, devMode, devPageSeen,
+    commandPalette, kiroUsageOpen, setKiroUsageOpen, kiroAccountEntry,
     setReportProblemOpen, toggleNav, effectiveCollapsed, closeMobileNav, activePath, libraryNavActive,
     discoverNavActive, isChat, navRowActive,
   } = shell
@@ -258,32 +258,14 @@ export function ShellNavRail({ shell }: { shell: AppShell }) {
           </div>
         </div>
 
-        {/* Bottom-fixed: Agent Capabilities, Developer (only when dev mode is
-            enabled), Settings, and the community row. Pinned to the
-            rail's bottom edge — the Apps frame above absorbs the scroll. */}
+        {/* Bottom-fixed: Agent Capabilities, Settings, and the community row.
+            Pinned to the rail's bottom edge — the Apps frame above absorbs
+            the scroll. */}
         {(() => {
           const s = NAV_ITEMS.find(n => n.id === 'settings')!
           const cap = NAV_ITEMS.find(n => n.id === 'capabilities')!
-          const devPath = '/developer'
           return (
             <div className="shrink-0 grid gap-0.5 px-2 pt-1 pb-2">
-              {devMode && (() => {
-                const dotClass = effectiveCollapsed
-                  ? 'absolute top-1 right-1 w-2 h-2 bg-accent rounded-full z-10 animate-pulse'
-                  : 'absolute top-1/2 -translate-y-1/2 right-2 w-2 h-2 bg-accent rounded-full z-10 animate-pulse'
-                return (
-                <NavItem
-                  path={devPath}
-                  label={i18nT('app.developer')}
-                  icon={<Code size={16} />}
-                  active={activePath === devPath}
-                  collapsed={effectiveCollapsed}
-                  onClick={closeMobileNav}
-                  badge={!devPageSeen && activePath !== devPath ? <span className={`${dotClass} [animation-iteration-count:3]!`} /> : undefined}
-                  {...uiLocation('shell.developer')}
-                />
-                )
-              })()}
               {terminalEnabled && (
                 <NavItem
                   path="#"

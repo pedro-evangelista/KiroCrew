@@ -408,7 +408,7 @@ def _tool_definitions() -> list[dict[str, Any]]:
                 "offscreen, hidden, unmounted, disabled, ambiguous, unknown, with "
                 "observed_at), or not_observed when their tab did not answer; it "
                 "never reads page text. A result may also carry blocker: "
-                "gate_off (a setting such as developer mode is off; setting_id "
+                "gate_off (a setting such as a feature preview is off; setting_id "
                 "names it, or is null when no setting turns it on), "
                 "needs_selection (the user must first open one item, e.g. a "
                 "crewmate, named in selection), "

@@ -930,7 +930,7 @@ describe('ui.show: point at an indexed location, never click it', () => {
 })
 
 /** The shell's gate fact, as App.tsx reports it. */
-function GateFact({ id, on }: { id: 'developer_mode' | 'terminal_enabled'; on: boolean }) {
+function GateFact({ id, on }: { id: 'terminal_enabled'; on: boolean }) {
   useGuideGate(id, on)
   return null
 }
@@ -1012,39 +1012,38 @@ describe('ui.show phase 3: selection steps, gates and the mid-guide re-plan', ()
       complete: { kind: 'select', selection: 'crewmate_selected', entity: 'crewmate' },
       textKey: 'components.guideLayer.select_crewmate',
     })
-    const dev = resolveGuideAction(show('shell.developer'))
-    if (!dev.ok) throw new Error(dev.reason)
-    expect(dev.action.steps[0]).toMatchObject({
+    const term = resolveGuideAction(show('shell.terminal'))
+    if (!term.ok) throw new Error(term.reason)
+    expect(term.action.steps[0]).toMatchObject({
       target: { kind: 'none' },
-      complete: { kind: 'gate', gate: 'developer_mode', settingId: 'developer.developer-mode' },
-      textKey: 'components.guideLayer.gate_setting',
+      complete: { kind: 'gate', gate: 'terminal_enabled' },
+      textKey: 'components.guideLayer.gate_terminal_enabled',
     })
-    expect(dev.action.steps[0].textVars?.label).toBe(i18nT('pages.settings.developerPanel.developer_mode'))
   })
 
   it('a mate\'s permission picker is its own ceiling: ui.show has no plan for it', () => {
     expect(resolveGuideAction(show('members.permissions')).ok).toBe(false)
   })
 
-  it('a gate that is off pauses on a blocker naming its setting, reports gate_off, and points at nothing', async () => {
-    pending = [planned('shell.developer', 'desktop')]
+  it('a gate that is off pauses on a blocker saying what it needs, reports gate_off, and points at nothing', async () => {
+    pending = [planned('shell.terminal', 'desktop')]
     walk(pending[0])
-    renderGuide('/chat/slot-A', <><GateFact id="developer_mode" on={false} /><LocTarget id="shell.developer" /></>)
+    renderGuide('/chat/slot-A', <><GateFact id="terminal_enabled" on={false} /><LocTarget id="shell.terminal" /></>)
     fireEvent.click(await screen.findByTestId('guide-start'))
     const blocker = await screen.findByTestId('guide-gate-blocker')
-    expect(blocker.textContent).toBe(L('gate_setting', { label: i18nT('pages.settings.developerPanel.developer_mode') }))
+    expect(blocker.textContent).toBe(L('gate_terminal_enabled'))
     expect(screen.queryByTestId('guide-arrow')).toBeNull()
     await waitFor(() => expect(writes('/api/guide/progress')).toHaveLength(1), { timeout: 4000 })
     expect(writes('/api/guide/progress')[0].body).toMatchObject({ step_index: 0, outcome: 'target_missing', detail: 'gate_off' })
   })
 
   it('a paused gate resumes by itself once the gate is on, and the guide never flips it', async () => {
-    const offered = planned('shell.developer', 'desktop')
+    const offered = planned('shell.terminal', 'desktop')
     pending = [offered]
     walk(offered)
     function Host() {
       const [on, setOn] = useState(false)
-      return <><GateFact id="developer_mode" on={on} /><button type="button" data-testid="turn-on" onClick={() => setOn(true)}>on</button><LocTarget id="shell.developer" /></>
+      return <><GateFact id="terminal_enabled" on={on} /><button type="button" data-testid="turn-on" onClick={() => setOn(true)}>on</button><LocTarget id="shell.terminal" /></>
     }
     renderGuide('/chat/slot-A', <Host />)
     fireEvent.click(await screen.findByTestId('guide-start'))
@@ -1200,9 +1199,9 @@ describe('ui.show phase 3: selection steps, gates and the mid-guide re-plan', ()
 
   it('asks for a re-plan when the viewport class changes mid-guide, and not before', async () => {
     const vp = switchableViewport()
-    pending = [planned('shell.developer', 'desktop')]
+    pending = [planned('shell.terminal', 'desktop')]
     walk(pending[0])
-    renderGuide('/chat/slot-A', <><GateFact id="developer_mode" on /><LocTarget id="shell.developer" /></>)
+    renderGuide('/chat/slot-A', <><GateFact id="terminal_enabled" on /><LocTarget id="shell.terminal" /></>)
     fireEvent.click(await screen.findByTestId('guide-start'))
     await waitFor(() => expect(writes('/api/guide/progress')).toHaveLength(1))
     expect(writes('/api/guide/replan')).toHaveLength(0)
@@ -1216,14 +1215,14 @@ describe('ui.show phase 3: selection steps, gates and the mid-guide re-plan', ()
 
   it('a refused re-plan is not asked again for the same revision, even as the guide is re-read', async () => {
     const vp = switchableViewport()
-    const offered = planned('shell.developer', 'desktop')
+    const offered = planned('shell.terminal', 'desktop')
     pending = [offered]
     walk(offered)
     server.use(http.post('/api/guide/replan', async ({ request }) => {
       calls.push({ path: '/api/guide/replan', body: (await request.json()) as Record<string, unknown>, headers: request.headers })
       return HttpResponse.json({ error: 'the steps walked so far differ in that placement', code: 'replan_not_at_boundary' }, { status: 409 })
     }))
-    renderGuide('/chat/slot-A', <><GateFact id="developer_mode" on /><LocTarget id="shell.developer" /></>)
+    renderGuide('/chat/slot-A', <><GateFact id="terminal_enabled" on /><LocTarget id="shell.terminal" /></>)
     fireEvent.click(await screen.findByTestId('guide-start'))
     await waitFor(() => expect(writes('/api/guide/progress')).toHaveLength(1))
     act(() => vp.toPhone())
@@ -1241,14 +1240,14 @@ describe('ui.show phase 3: selection steps, gates and the mid-guide re-plan', ()
 
   it('a re-plan that fails for any other reason says so in the guide', async () => {
     const vp = switchableViewport()
-    const offered = planned('shell.developer', 'desktop')
+    const offered = planned('shell.terminal', 'desktop')
     pending = [offered]
     walk(offered)
     server.use(http.post('/api/guide/replan', async ({ request }) => {
       calls.push({ path: '/api/guide/replan', body: (await request.json()) as Record<string, unknown>, headers: request.headers })
       return HttpResponse.json({ error: 'replan store unavailable' }, { status: 503 })
     }))
-    renderGuide('/chat/slot-A', <><GateFact id="developer_mode" on /><LocTarget id="shell.developer" /></>)
+    renderGuide('/chat/slot-A', <><GateFact id="terminal_enabled" on /><LocTarget id="shell.terminal" /></>)
     fireEvent.click(await screen.findByTestId('guide-start'))
     await waitFor(() => expect(writes('/api/guide/progress')).toHaveLength(1))
     act(() => vp.toPhone())

@@ -54,7 +54,6 @@ vi.mock('../../utils/terminalRegistry', () => ({
   useTerminalEnabled: () => true,
   useTerminalTitle: () => 'Terminal',
 }))
-vi.mock('../../hooks/useDevMode', () => ({ useDevMode: () => false }))
 
 vi.mock('../../components/ChatPane', () => ({
   default: ({ slotKey, onFileOpen }: { slotKey: string; onFileOpen?: (path: string) => void }) => (

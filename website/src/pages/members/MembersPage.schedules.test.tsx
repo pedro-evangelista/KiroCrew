@@ -103,7 +103,6 @@ vi.mock('../../utils/terminalRegistry', () => ({
   useTerminalEnabled: () => true,
   useTerminalTitle: () => 'Terminal',
 }))
-vi.mock('../../hooks/useDevMode', () => ({ useDevMode: () => false }))
 vi.mock('../../components/ChatPane', () => ({
   // Driving-session and quiet-chat links are page-owned exits from the pushed
   // schedule form, so the stub exposes both callbacks directly. File and Side

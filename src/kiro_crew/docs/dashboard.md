@@ -66,9 +66,9 @@ Tabbed management for mates, custom agents, MCP connections, skills, the knowled
 
 Create and manage cron jobs, organize them in folders, and switch between list, calendar, and execution views.
 
-### Developer (`/developer`)
+### Developer (`/settings/developer`)
 
-Tabbed developer views for logs, system metrics, telemetry, storage, MCP pooling, memory, configuration, debug tools, and the session archive. The former standalone `/system` page is the System tab here. The agent backend lives in **Settings → Agent Harness**; an old `/developer?tab=agent-backend` link forwards there.
+**Settings → Developer** lists its pages beside the content: Feature Previews first, then the developer views for logs, system metrics, telemetry, storage, MCP pooling, memory, configuration, debug tools, and the session archive (`/settings/developer/<page>`, e.g. `/settings/developer/system`). Every page is always listed. An old `/developer?tab=<page>` link redirects to the same page here, and `/developer?tab=agent-backend` forwards to **Settings → Agent Harness**.
 
 ### Logs (`/logs`)
 

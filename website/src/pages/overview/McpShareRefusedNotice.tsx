@@ -2,10 +2,10 @@
  * The notice the MCP servers list shows when a server config asks to share is
  * not shared, because the gateway refused its launch until it is approved.
  *
- * The approval itself stays on Developer > MCP Management: that page reads the
- * exact launch and the approve write is checked against it. This notice only
- * makes the refusal visible where people look, and links to that page, which the
- * router serves whether or not Developer Mode puts it in the side rail.
+ * The approval itself stays on Settings > Developer > MCP Management: that page
+ * reads the exact launch and the approve write is checked against it. This
+ * notice only makes the refusal visible where people look, and links to that
+ * page.
  */
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle } from 'lucide-react'
@@ -17,7 +17,7 @@ import { i18nT } from '../../i18n/t'
 import type { GatewayStatus } from '../settings/mcpManagementModel'
 
 /** Developer > MCP Management, where a refused launch is approved. */
-export const MCP_MANAGEMENT_PATH = '/developer?tab=mcp-pool'
+export const MCP_MANAGEMENT_PATH = '/settings/developer/mcp-pool'
 
 /** How often the open notice re-reads gateway status. */
 export const STATUS_POLL_MS = 30_000

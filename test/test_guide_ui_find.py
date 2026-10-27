@@ -982,10 +982,10 @@ def test_guide_start_turns_a_find_for_a_planned_control_into_its_walk(
 
 
 def test_a_page_is_reached_by_its_planned_opener_or_its_rail_entry_else_in_words() -> None:
-    (dev,) = [r for r in _results("developer page") if r["id"] == "page.developer"]
-    assert dev["guide_ref"] == {
+    (bell,) = [r for r in _results("notifications page") if r["id"] == "page.notifications"]
+    assert bell["guide_ref"] == {
         "action_id": "ui.show",
-        "params": {"location_id": "shell.developer"},
+        "params": {"location_id": "shell.notifications"},
     }
     # Logs has no entry anywhere to point at, and a guide never opens a page:
     # no find is handed out, and one the agent writes itself is refused.

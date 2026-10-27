@@ -22,7 +22,6 @@ vi.mock('../utils/terminalRegistry', () => ({
   useTerminalEnabled: () => false,
   useTerminalTitle: () => 'Terminal',
 }))
-vi.mock('../hooks/useDevMode', () => ({ useDevMode: () => false }))
 vi.mock('../hooks/useIsMobile', () => ({ useIsMobile: () => false }))
 vi.mock('../pierre/tree', () => ({
   PierreWorkspaceTree: () => <div data-testid="file-browser-tree" />,

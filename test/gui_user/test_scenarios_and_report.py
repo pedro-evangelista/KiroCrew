@@ -46,7 +46,7 @@ SHIPPED_SMOKE = {
     "search-everywhere-jump-to-setting",
     "sessions-new-chat",
     "settings-chat-toggle-show-timestamps",
-    "settings-developer-panel-dev-mode-toggle",
+    "settings-developer-panel-pages",
     "settings-search-jump-to-theme",
     "settings-security-docs-section",
     "settings-security-layers-section",
@@ -366,7 +366,7 @@ class TestShippedScenarios:
             "auth": ["auth-sign-in-card-signed-out"],
             "settings": [
                 "settings-chat-toggle-show-timestamps",
-                "settings-developer-panel-dev-mode-toggle",
+                "settings-developer-panel-pages",
                 "settings-search-jump-to-theme",
                 "settings-shortcuts",
                 "settings-tab-rail-navigation",

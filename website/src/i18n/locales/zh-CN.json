@@ -168,7 +168,6 @@
     "cpu": "CPU",
     "cpu_unavailable": "CPU：不可用",
     "credits": "额度",
-    "developer": "开发者",
     "discord_community": "Discord 社区",
     "disk_unavailable": "磁盘：不可用",
     "dismiss": "忽略",
@@ -6429,7 +6428,6 @@
           "knowledge": "知识库"
         },
         "pagesProvider": {
-          "developer": "开发者",
           "kirocrew_agents": "{{productName}} 代理",
           "logs": "日志",
           "pages": "页面",
@@ -9721,7 +9719,6 @@
       "select_confirm_unseen_job": "这个任务已经打开了。点“下一步”继续，或先换一个任务。",
       "select_open_named": "当前打开的是：“{{name}}”。",
       "gate_setting": "请先在“设置”中打开“{{label}}”。打开后引导会自动继续；它不会替你更改这个设置。",
-      "gate_developer_mode": "请先在“设置”中打开开发者模式。打开后引导会自动继续。",
       "gate_terminal_enabled": "这个安装上的终端已关闭。终端打开后引导会自动继续。",
       "title_ui_find": "查找“{{label}}”",
       "step_ui_find_open": "打开高亮的控件：“{{target}}”就在里面。",
@@ -13415,42 +13412,32 @@
       }
     },
     "developerPage": {
-      "developer": "开发者",
       "tabs": {
         "archive": {
-          "description": "已轮转/压缩的会话历史（保留 7 天）",
           "label": "归档"
         },
         "config": {
-          "description": "{{productName}} 和代理配置 — 修改即时保存",
           "label": "配置"
         },
         "debugTools": {
-          "label": "调试工具",
-          "description": "在真实设备上叠加显示应用内部行为的诊断浮层。"
+          "label": "调试工具"
         },
         "logs": {
-          "description": "支持按级别筛选和搜索的实时日志查看器",
           "label": "日志"
         },
         "mcpPool": {
-          "description": "为 MCP 服务器插桩，并在会话之间共享它们的后端",
           "label": "MCP 管理"
         },
         "memory": {
-          "description": "记忆图谱、嵌入提供方与向量存储内部信息",
           "label": "记忆"
         },
         "storage": {
-          "description": "localStorage 用量、配额与垃圾回收",
           "label": "存储"
         },
         "system": {
-          "description": "CPU、内存、网络与进程指标",
           "label": "系统"
         },
         "telemetry": {
-          "description": "会话启动延迟（p50/p90）与 MCP/技能加速指标",
           "label": "遥测"
         }
       }
@@ -16457,15 +16444,12 @@
         "retry": "重试"
       },
       "developerPanel": {
-        "developer_mode": "开发者模式",
         "developer_tools": "开发者工具",
         "feature_previews": "功能预览",
         "feature_previews_desc": "尚未发布的功能和页面。在此开启之前，这些页面不会出现在侧边栏和全局搜索中；下面的开关本身则可以通过设置搜索找到。这些内容有意保留未完善的状态；除卡片另有说明外，开关仅对本设备生效。",
         "gateway": "网关",
         "how_to_set_up_an_ssh_tunnel": "如何设置 SSH 隧道",
-        "open_developer_page": "打开开发者页面",
         "run_a_local_gateway": "运行本地网关",
-        "show_developer_page_in_sidebar_with_logs_system": "在侧边栏显示开发者页面，包含日志、系统指标与记忆内部信息",
         "turn_it_off_only_when_a_gateway_already_answers": "在这台机器上启动网关。除非本应用的端口已经连到另一台机器上的 Crew，否则请保持开启；不然下次打开应用时（也就是此设置生效时）将无法连接。为此需要用 Connection 菜单中的“Set Remote Host…”为此端口保存该 Crew，并且要有隧道：在那里勾选“Keep an SSH tunnel to this crew open”（macOS 和 Linux），或自己保持 SSH 隧道运行。关闭此项后，设置 → 远程 Crew 中的连接会停止，所以不算数。"
       },
       "discordPanel": {
@@ -18976,7 +18960,7 @@
         "label": "电脑操作"
       },
       "developer": {
-        "description": "开发者模式、功能预览、日志、系统指标与诊断",
+        "description": "功能预览、日志、系统指标与诊断",
         "label": "开发者"
       },
       "display": {

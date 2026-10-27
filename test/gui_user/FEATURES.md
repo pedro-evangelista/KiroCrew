@@ -367,7 +367,7 @@ Priorities: P0 10 · P1 37 · P2 162 · P3 62. Deduped from 387 raw records.
 | P1 | `settings-about` | As a user, I want version, build info and a diagnostics bundle, so that I can report a problem accurately. | `/settings/about` | minimal | smoke | 2 |
 | P1 | `settings-chat` | As a user, I want chat behaviour preferences including plain vs highlighted diffs, so that the transcript reads the way I like. | `/settings/chat` | minimal | smoke | 2 |
 | P1 | `settings-chat-toggle-show-timestamps` | As a dashboard user, I want to toggle Show Timestamps in Settings > Chat, so that each message displays its time. | `/settings/chat` | sessions-a-few | smoke | 4 |
-| P1 | `settings-developer-panel-dev-mode-toggle` | As a developer, I want to enable Developer Mode in Settings > Developer, so that the Developer page with logs and metrics appears in the sidebar. | `/settings/developer` | minimal | smoke | 3 |
+| P1 | `settings-developer-panel-pages` | As a developer, I want the feature previews and the internals pages (logs, metrics, memory graph) side by side in Settings > Developer, so that I can reach them without unlocking anything. | `/settings/developer` | minimal | smoke | 3 |
 | P1 | `settings-display` | As a user, I want theme, density, language and terminal font/shell options, so that the dashboard fits my eyes and habits. | `/settings/display` | minimal | smoke | 2 |
 | P1 | `settings-display-theme-switch` | As a user, I want to pick a color theme and font, so that the dashboard matches my preference. | `/settings/display` | minimal | smoke | 3 |
 | P1 | `settings-notifications-panel` | As a dashboard user, I want to open Settings > Notifications, so that I can configure sounds and background-chat alerts. | `/settings/notifications` | minimal | smoke | 2 |
@@ -432,16 +432,16 @@ Priorities: P0 10 · P1 37 · P2 162 · P3 62. Deduped from 387 raw records.
 | Priority | Id | User story | Start URL | Seed | Runnable | Steps |
 |---|---|---|---|---|---|---|
 | P2 | `developer-agent-backend` | As a developer, I want to see which agent harness backend is live, what each harness can and cannot do, and whether Kiro prerequisites are met, so that I know what turns run on before I choose a harness. | `/settings/agent` | minimal | nightly | 3 |
-| P2 | `developer-archive` | As a developer, I want a consolidated session archive browser, so that I can inspect compacted history. | `/developer` | sessions-long-history | nightly | 3 |
-| P2 | `developer-config` | As a developer, I want raw Kiro Crew and agent config editors, so that I can fix a setting no panel exposes. | `/developer` | minimal | nightly | 3 |
-| P2 | `developer-debug-tools` | As a developer, I want diagnostic overlays such as the chat scroll inspector, so that I can debug layout issues. | `/developer` | sessions-a-few | nightly | 3 |
-| P2 | `developer-logs` | As a developer, I want a live gateway log stream with level control, so that I can debug in real time. | `/developer` | minimal | nightly | 3 |
-| P2 | `developer-mcp-pool` | As a developer, I want to see each MCP server's state, opt servers in to stubbing and read the sharing assessment, so that I can manage MCP connections and diagnose tool outages. | `/developer` | connections-two | nightly | 3 |
-| P2 | `developer-memory-graph` | As a developer, I want an entity/relation visualiser over the memory store plus every memory layer and saved lesson, so that I can debug and audit what the agent remembers. | `/developer` | memory-populated | nightly | 3 |
-| P2 | `developer-page-tabs` | As a developer, I want logs, system, telemetry, storage, MCP pool, memory graph, config, debug tools, and archive in one place, so that I can diagnose the gateway. | `/developer` | rich | nightly | 5 |
-| P2 | `developer-storage` | As a developer, I want a raw localStorage inspector, so that I can debug client preferences. | `/developer` | minimal | nightly | 2 |
-| P2 | `developer-system` | As a developer, I want host runtime, services, sessions and performance views, so that I can spot resource problems and reclaim session storage. | `/developer` | sessions-long-history | nightly | 3 |
-| P2 | `developer-telemetry` | As a developer, I want startup timings and context traces, so that I can find slow paths. | `/developer` | minimal | nightly | 2 |
+| P2 | `developer-archive` | As a developer, I want a consolidated session archive browser, so that I can inspect compacted history. | `/settings/developer` | sessions-long-history | nightly | 3 |
+| P2 | `developer-config` | As a developer, I want raw Kiro Crew and agent config editors, so that I can fix a setting no panel exposes. | `/settings/developer` | minimal | nightly | 3 |
+| P2 | `developer-debug-tools` | As a developer, I want diagnostic overlays such as the chat scroll inspector, so that I can debug layout issues. | `/settings/developer` | sessions-a-few | nightly | 3 |
+| P2 | `developer-logs` | As a developer, I want a live gateway log stream with level control, so that I can debug in real time. | `/settings/developer` | minimal | nightly | 3 |
+| P2 | `developer-mcp-pool` | As a developer, I want to see each MCP server's state, opt servers in to stubbing and read the sharing assessment, so that I can manage MCP connections and diagnose tool outages. | `/settings/developer` | connections-two | nightly | 3 |
+| P2 | `developer-memory-graph` | As a developer, I want an entity/relation visualiser over the memory store plus every memory layer and saved lesson, so that I can debug and audit what the agent remembers. | `/settings/developer` | memory-populated | nightly | 3 |
+| P2 | `developer-page-tabs` | As a developer, I want logs, system, telemetry, storage, MCP pool, memory graph, config, debug tools, and archive in one place, so that I can diagnose the gateway. | `/settings/developer` | rich | nightly | 5 |
+| P2 | `developer-storage` | As a developer, I want a raw localStorage inspector, so that I can debug client preferences. | `/settings/developer` | minimal | nightly | 2 |
+| P2 | `developer-system` | As a developer, I want host runtime, services, sessions and performance views, so that I can spot resource problems and reclaim session storage. | `/settings/developer` | sessions-long-history | nightly | 3 |
+| P2 | `developer-telemetry` | As a developer, I want startup timings and context traces, so that I can find slow paths. | `/settings/developer` | minimal | nightly | 2 |
 | P2 | `standalone-logs` | As an operator, I want a full-page log viewer at a stable URL, so that I can watch the gateway logs from one bookmark. | `/logs` | minimal | nightly | 2 |
 
 ## Not generated

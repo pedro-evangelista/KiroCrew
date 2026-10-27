@@ -188,7 +188,6 @@
     "cpu": "CPU",
     "cpu_unavailable": "CPU: non disponibile",
     "credits": "crediti",
-    "developer": "Sviluppatore",
     "discord_community": "Community Discord",
     "disk_unavailable": "Disco: non disponibile",
     "dismiss": "Ignora",
@@ -6655,7 +6654,6 @@
           "knowledge": "Conoscenze"
         },
         "pagesProvider": {
-          "developer": "Sviluppatore",
           "kirocrew_agents": "Agenti {{productName}}",
           "logs": "Log",
           "pages": "Pagine",
@@ -10009,7 +10007,6 @@
       "select_confirm_unseen_job": "Questa attività è già aperta. Premi Avanti per continuare con questa, oppure scegli prima un’altra attività.",
       "select_open_named": "Aperto ora: «{{name}}».",
       "gate_setting": "Attiva prima «{{label}}» nelle Impostazioni. La guida prosegue da sola appena è attivo; non cambia mai l’impostazione al posto tuo.",
-      "gate_developer_mode": "Attiva prima la modalità sviluppatore nelle Impostazioni. La guida prosegue da sola appena è attiva.",
       "gate_terminal_enabled": "Il terminale è disattivato in questa installazione. La guida prosegue da sola appena viene attivato.",
       "title_ui_find": "Trova «{{label}}»",
       "step_ui_find_open": "Apri il controllo evidenziato: «{{target}}» è lì dentro.",
@@ -13855,42 +13852,32 @@
       }
     },
     "developerPage": {
-      "developer": "Sviluppatore",
       "tabs": {
         "archive": {
-          "description": "Cronologia delle sessioni ruotata/compressa (conservazione di 7 giorni)",
           "label": "Archivio"
         },
         "config": {
-          "description": "Configurazione di {{productName}} e dell’agente: le modifiche si salvano subito",
           "label": "Configurazione"
         },
         "debugTools": {
-          "label": "Strumenti di debug",
-          "description": "Sovrapposizioni che mostrano sul dispositivo cosa fa l'app a se stessa."
+          "label": "Strumenti di debug"
         },
         "logs": {
-          "description": "Visualizzatore dei log in tempo reale con filtro per livello e ricerca",
           "label": "Log"
         },
         "mcpPool": {
-          "description": "Mettere uno stub ai server MCP e condividere i loro backend tra sessioni",
           "label": "Gestione MCP"
         },
         "memory": {
-          "description": "Grafo della memoria, provider di embedding e interni del vector store",
           "label": "Memoria"
         },
         "storage": {
-          "description": "Utilizzo di localStorage, quote e garbage collection",
           "label": "Archiviazione"
         },
         "system": {
-          "description": "Metriche di CPU, memoria, rete e processi",
           "label": "Sistema"
         },
         "telemetry": {
-          "description": "Latenza di avvio delle sessioni (p50/p90) e metriche di accelerazione di MCP/skill",
           "label": "Telemetria"
         }
       }
@@ -17005,15 +16992,12 @@
         "retry": "Riprova"
       },
       "developerPanel": {
-        "developer_mode": "Modalità sviluppatore",
         "developer_tools": "Strumenti per sviluppatori",
         "feature_previews": "Anteprime delle funzionalità",
         "feature_previews_desc": "Funzionalità e pagine non rilasciate. Le pagine restano nascoste dalla barra laterale e da Cerca in tutto finché non le attivi qui; gli interruttori stessi compaiono invece nella ricerca delle impostazioni. Sono incomplete di proposito e valgono solo per questo dispositivo, a meno che una scheda non dica il contrario.",
         "gateway": "Gateway",
         "how_to_set_up_an_ssh_tunnel": "Come configurare un tunnel SSH",
-        "open_developer_page": "Apri la pagina Sviluppatore",
         "run_a_local_gateway": "Esegui un gateway locale",
-        "show_developer_page_in_sidebar_with_logs_system": "Mostra la pagina Sviluppatore nella barra laterale con log, metriche di sistema e dettagli interni della memoria",
         "turn_it_off_only_when_a_gateway_already_answers": "Avvia un gateway su questa macchina. Lascialo attivo a meno che la porta di questa app non raggiunga già una Crew su un'altra macchina; altrimenti l'app non potrà connettersi alla prossima apertura, che è quando questa impostazione ha effetto. Serve che la Crew sia salvata per questa porta con “Set Remote Host…” nel menu Connection, più un tunnel: spunta “Keep an SSH tunnel to this crew open” lì (macOS e Linux) oppure mantieni attivo un tuo tunnel SSH. Le connessioni di Impostazioni → Crew remota si fermano quando questa opzione è disattivata, quindi non contano."
       },
       "discordPanel": {
@@ -19570,7 +19554,7 @@
         "label": "Uso del computer"
       },
       "developer": {
-        "description": "Modalità sviluppatore, anteprime delle funzionalità, log, metriche di sistema e diagnostica",
+        "description": "Anteprime delle funzionalità, log, metriche di sistema e diagnostica",
         "label": "Sviluppatore"
       },
       "display": {

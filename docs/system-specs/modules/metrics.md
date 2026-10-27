@@ -1333,10 +1333,8 @@ that write site must stamp too. Same independence from the
 
 **Where it renders.** The breakdown is a **per-session side-panel tab**
 (`ViewKind` `context`, opened from the panel's `+` menu directly under Logs), not
-a section of the global Telemetry page. It is a **developer surface**: the `+`
-menu offers it only when Developer Mode is on (Settings > Developer, the
-`mc-dev-mode` consent gate the standalone Developer page also uses), so ordinary
-users never see it. The tab is scoped to the chat slot it was
+a section of the global Telemetry page. It is a **developer surface**, listed
+in the `+` menu's diagnostics group with Logs. The tab is scoped to the chat slot it was
 opened from, which is why it carries no session picker: a per-turn drill-down that
 first asks the reader to choose a session cannot say anything until they do, and
 Logs — the other "what actually happened in THIS session" view — already sets the

@@ -5843,37 +5843,36 @@
       "component": "website/src/pages/settings/ChatPanel.tsx"
     },
     {
-      "id": "settings-developer-panel-dev-mode-toggle",
+      "id": "settings-developer-panel-pages",
       "feature": "settings",
-      "title": "Toggle Developer Mode and open the Developer page",
-      "user_story": "As a developer, I want to enable Developer Mode in Settings > Developer, so that the Developer page with logs and metrics appears in the sidebar.",
+      "title": "Browse the Settings > Developer pages",
+      "user_story": "As a developer, I want the feature previews and the internals pages (logs, metrics, memory graph) side by side in Settings > Developer, so that I can reach them without unlocking anything.",
       "start_url": "/settings/developer",
-      "entry_path": "Settings > System > Developer > Developer Mode toggle > Open developer page link",
+      "entry_path": "Settings > System > Developer > Feature Previews | Logs | System | ...",
       "preconditions": {
         "seed": "minimal",
         "members": [],
         "feature_flags": [],
-        "notes": "Stored in localStorage mc-dev-mode; dispatches mc-dev-mode-changed."
+        "notes": "Every page is listed; /developer?tab=<key> redirects here."
       },
       "runnable": "smoke",
       "estimated_steps": 3,
-      "rationale": "Local toggle with immediate sidebar effect; fully web-testable.",
+      "rationale": "Local navigation with an immediate result; fully web-testable.",
       "source": [
         "docs/feature-map/README.md",
         "website/src/App.tsx",
         "website/src/components/commandPalette/settingsRegistry.gen.ts",
         "website/src/pages/DeveloperPage.tsx",
         "website/src/pages/settings/DeveloperPanel.tsx",
-        "website/src/pages/settings/FeaturePreviewsSection.tsx",
-        "website/src/utils/previewFlags.ts"
+        "website/src/pages/settings/FeaturePreviewsSection.tsx"
       ],
       "priority": "P1",
       "merged_from": [
         "settings-developer",
         "settings-developer-mode-and-feature-previews",
-        "settings-developer-panel-dev-mode-toggle"
+        "settings-developer-panel-pages"
       ],
-      "component": "website/src/pages/DeveloperPage.tsx"
+      "component": "website/src/pages/settings/DeveloperPanel.tsx"
     },
     {
       "id": "settings-display",
@@ -7446,14 +7445,12 @@
       "feature": "developer",
       "title": "Developer › Archive",
       "user_story": "As a developer, I want a consolidated session archive browser, so that I can inspect compacted history.",
-      "start_url": "/developer",
-      "entry_path": "Developer → archive tab (?tab=archive)",
+      "start_url": "/settings/developer",
+      "entry_path": "Settings → Developer → archive (/settings/developer/archive)",
       "preconditions": {
         "seed": "sessions-long-history",
         "members": [],
-        "feature_flags": [
-          "mc-dev-mode"
-        ],
+        "feature_flags": [],
         "notes": "Fixture includes at least one archive file."
       },
       "runnable": "nightly",
@@ -7473,14 +7470,12 @@
       "feature": "developer",
       "title": "Developer › Config",
       "user_story": "As a developer, I want raw Kiro Crew and agent config editors, so that I can fix a setting no panel exposes.",
-      "start_url": "/developer",
-      "entry_path": "Developer → config tab (?tab=config)",
+      "start_url": "/settings/developer",
+      "entry_path": "Settings → Developer → config (/settings/developer/config)",
       "preconditions": {
         "seed": "minimal",
         "members": [],
-        "feature_flags": [
-          "mc-dev-mode"
-        ],
+        "feature_flags": [],
         "notes": "Edit a harmless key and revert."
       },
       "runnable": "nightly",
@@ -7500,14 +7495,12 @@
       "feature": "developer",
       "title": "Developer › Debug tools",
       "user_story": "As a developer, I want diagnostic overlays such as the chat scroll inspector, so that I can debug layout issues.",
-      "start_url": "/developer",
-      "entry_path": "Developer → debug-tools tab (?tab=debug-tools)",
+      "start_url": "/settings/developer",
+      "entry_path": "Settings → Developer → debug-tools (/settings/developer/debug-tools)",
       "preconditions": {
         "seed": "sessions-a-few",
         "members": [],
-        "feature_flags": [
-          "mc-dev-mode"
-        ],
+        "feature_flags": [],
         "notes": ""
       },
       "runnable": "nightly",
@@ -7527,14 +7520,12 @@
       "feature": "developer",
       "title": "Developer › Logs",
       "user_story": "As a developer, I want a live gateway log stream with level control, so that I can debug in real time.",
-      "start_url": "/developer",
-      "entry_path": "Developer → logs tab (?tab=logs)",
+      "start_url": "/settings/developer",
+      "entry_path": "Settings → Developer → logs (/settings/developer/logs)",
       "preconditions": {
         "seed": "minimal",
         "members": [],
-        "feature_flags": [
-          "mc-dev-mode"
-        ],
+        "feature_flags": [],
         "notes": ""
       },
       "runnable": "nightly",
@@ -7554,15 +7545,13 @@
       "feature": "developer",
       "title": "Developer › MCP Management (tab key mcp-pool)",
       "user_story": "As a developer, I want to see each MCP server's state, opt servers in to stubbing and read the sharing assessment, so that I can manage MCP connections and diagnose tool outages.",
-      "start_url": "/developer",
-      "entry_path": "Developer → MCP Management tab (?tab=mcp-pool) → Servers table with stub switches, and the Sharing assessment tab",
+      "start_url": "/settings/developer",
+      "entry_path": "Settings → Developer → MCP Management (/settings/developer/mcp-pool) → Servers table with stub switches, and the Sharing assessment tab",
       "preconditions": {
         "seed": "connections-two",
         "members": [],
-        "feature_flags": [
-          "mc-dev-mode"
-        ],
-        "notes": "The tab key is mcp-pool and its label is MCP Management (DeveloperPage.tsx). Two views: Servers (columns Server, Used by, State, Stub; one stub switch per server) and Sharing assessment."
+        "feature_flags": [],
+        "notes": "The tab key is mcp-pool and its label is MCP Management (DeveloperPanel.tsx). Two views: Servers (columns Server, Used by, State, Stub; one stub switch per server) and Sharing assessment."
       },
       "runnable": "nightly",
       "estimated_steps": 3,
@@ -7583,16 +7572,14 @@
       "feature": "developer",
       "title": "Memory graph",
       "user_story": "As a developer, I want an entity/relation visualiser over the memory store plus every memory layer and saved lesson, so that I can debug and audit what the agent remembers.",
-      "start_url": "/developer",
-      "entry_path": "Developer → memory tab (?tab=memory)",
+      "start_url": "/settings/developer",
+      "entry_path": "Settings → Developer → memory (/settings/developer/memory)",
       "preconditions": {
         "seed": "memory-populated",
         "members": [
           "nova-sky"
         ],
-        "feature_flags": [
-          "mc-dev-mode"
-        ],
+        "feature_flags": [],
         "notes": "Canvas graph; assert node count rather than layout. Vector stores are absent by design; only markdown layers (preferences, projects, semantic, history) and three lessons in lessons.jsonl are seeded."
       },
       "runnable": "nightly",
@@ -7609,22 +7596,20 @@
         "developer-memory-graph",
         "developer-memory-tab-lessons-and-layers"
       ],
-      "component": "website/src/pages/DeveloperPage.tsx"
+      "component": "website/src/pages/settings/DeveloperPanel.tsx"
     },
     {
       "id": "developer-page-tabs",
       "feature": "developer",
-      "title": "Navigate the Developer page internals tabs",
+      "title": "Navigate the Settings > Developer internals pages",
       "user_story": "As a developer, I want logs, system, telemetry, storage, MCP pool, memory graph, config, debug tools, and archive in one place, so that I can diagnose the gateway.",
-      "start_url": "/developer",
-      "entry_path": "Enable dev mode → Rail bottom → Developer → tabs (logs, system, telemetry, storage, mcp-pool, memory, config, debug-tools, archive)",
+      "start_url": "/settings/developer",
+      "entry_path": "Settings → Developer → pages (logs, system, telemetry, storage, mcp-pool, memory, config, debug-tools, archive)",
       "preconditions": {
         "seed": "rich",
         "members": [],
-        "feature_flags": [
-          "mc-dev-mode"
-        ],
-        "notes": "Rail row only with mc-dev-mode=1 but route always resolves; MemoryGraphTab lazy; /logs also standalone."
+        "feature_flags": [],
+        "notes": "/developer?tab=<key> redirects to /settings/developer/<key>; MemoryGraphTab lazy; /logs also standalone."
       },
       "runnable": "nightly",
       "estimated_steps": 5,
@@ -7644,21 +7629,19 @@
       "merged_from": [
         "developer-page-tabs"
       ],
-      "component": "website/src/pages/DeveloperPage.tsx"
+      "component": "website/src/pages/settings/DeveloperPanel.tsx"
     },
     {
       "id": "developer-storage",
       "feature": "developer",
       "title": "Developer › Storage",
       "user_story": "As a developer, I want a raw localStorage inspector, so that I can debug client preferences.",
-      "start_url": "/developer",
-      "entry_path": "Developer → storage tab (?tab=storage)",
+      "start_url": "/settings/developer",
+      "entry_path": "Settings → Developer → storage (/settings/developer/storage)",
       "preconditions": {
         "seed": "minimal",
         "members": [],
-        "feature_flags": [
-          "mc-dev-mode"
-        ],
+        "feature_flags": [],
         "notes": ""
       },
       "runnable": "nightly",
@@ -7678,14 +7661,12 @@
       "feature": "developer",
       "title": "Developer › System",
       "user_story": "As a developer, I want host runtime, services, sessions and performance views, so that I can spot resource problems and reclaim session storage.",
-      "start_url": "/developer",
-      "entry_path": "Developer → system tab (?tab=system) → sub-tabs Sessions | Services | Performance → SessionStorageScreen",
+      "start_url": "/settings/developer",
+      "entry_path": "Settings → Developer → system (/settings/developer/system) → sub-tabs Sessions | Services | Performance → SessionStorageScreen",
       "preconditions": {
         "seed": "sessions-long-history",
         "members": [],
-        "feature_flags": [
-          "mc-dev-mode"
-        ],
+        "feature_flags": [],
         "notes": "Numbers vary; assert structure not values. pages/system/*; HostRuntimeCard shows host info. Deletion actions exist but only read-only inspection is exercised."
       },
       "runnable": "nightly",
@@ -7712,14 +7693,12 @@
       "feature": "developer",
       "title": "Developer › Telemetry",
       "user_story": "As a developer, I want startup timings and context traces, so that I can find slow paths.",
-      "start_url": "/developer",
-      "entry_path": "Developer → telemetry tab (?tab=telemetry)",
+      "start_url": "/settings/developer",
+      "entry_path": "Settings → Developer → telemetry (/settings/developer/telemetry)",
       "preconditions": {
         "seed": "minimal",
         "members": [],
-        "feature_flags": [
-          "mc-dev-mode"
-        ],
+        "feature_flags": [],
         "notes": ""
       },
       "runnable": "nightly",

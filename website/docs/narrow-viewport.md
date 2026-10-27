@@ -357,7 +357,7 @@ container already claims its own swipe via `data-owns-swipe`.
 
 The rail carries everything the nav drawer does except Connect-your-phone, which is
 moot on the phone itself: the Main rows and Library on top, the apps, then
-Developer (in developer mode), Terminal (which toggles the docked panel and closes
+Terminal (which toggles the docked panel and closes
 the drawer so the panel is not left behind it), Capabilities and Kiro Account, with
 Settings and Search pinned at the foot. `shell/nav/adaptiveMobileRail.tsx` places
 that secondary group: it stays pinned above Settings while the Apps list keeps

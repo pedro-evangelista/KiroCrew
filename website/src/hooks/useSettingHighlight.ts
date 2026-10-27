@@ -205,9 +205,6 @@ function settingAnchorSelector(
  *   page that also mounts this hook while REDIRECTING legacy links to Settings
  *   passes a route check here, so it does not read the Settings-bound
  *   highlight, find no anchor, and strip it before SettingsPage ever mounts.
- *   (DeveloperPage mounts this hook for the default-crewmate deep link on its
- *   Config tab, and gates it off so that its legacy `agent-backend` redirect
- *   forwards `highlight` to Settings untouched.)
  */
 export function useSettingHighlight(owns: boolean = true): void {
   const [params, setParams] = useSearchParams()
